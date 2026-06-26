@@ -19,13 +19,13 @@ export const SITE = {
   },
   contact: {
     photoUrl: '',
-    phones: ['54588271'],
-    email: 'mzaliahmed73@gmail.com',
-    phone: '54588271',
-    whatsapp: '22479443',
-    facebook: 'https://www.facebook.com/share/1GFU7WuHMb/',
-    instagram: 'https://www.instagram.com/ahmed_mzali_boutique',
-    tiktok: 'https://www.tiktok.com/@ahmed.mzali.boutique007',
+    phones: [],
+    email: '',
+    phone: '',
+    whatsapp: '',
+    facebook: '',
+    instagram: '',
+    tiktok: '',
   },
   currency: {
     code: 'TND',
@@ -39,7 +39,7 @@ export const SITE = {
     'Tozeur', 'Tunis', 'Zaghouan', 'Medenine', 'Kebili', 'Kairouan',
   ],
   thankYouMessage: 'مرحبا بك خلي تلفونك ديما محلول انشاالله دقائق ونكلموك',
-} as const;
+};
 
 export function formatPrice(v: number): string {
   return `${Math.round(v)} ${SITE.currency.symbol}`;
