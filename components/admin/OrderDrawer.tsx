@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import NumberField from './NumberField';
-import { Save, Trash2, Plus, Check, AlertTriangle, History } from 'lucide-react';
+import { Save, Trash2, Plus, History } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import type { OrderResponse, OrderStatus } from '@/types';
 
@@ -125,12 +125,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [originalStatus, setOriginalStatus] = useState<string>('');
   const [status, setStatus] = useState<OrderStatus>('');
   const [attempts, setAttempts] = useState<number>(1);
-  const [navexTracking, setNavexTracking] = useState<string>('');
-  const [navexStatus, setNavexStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
-  const [navexMsg, setNavexMsg] = useState<string>('');
-  const [fdTracking, setFdTracking] = useState<string>('');
-  const [fdStatus, setFdStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
-  const [fdMsg, setFdMsg] = useState<string>('');
   const [assignmentHistory, setAssignmentHistory] = useState<AssignmentEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
@@ -233,12 +227,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           setStatus(o.status);
           setOriginalStatus(String(o.status));
           setAttempts(Number(o.meta?._mzem_attempts ?? 1));
-          setNavexTracking(String((o.meta?._navex_tracking as string) ?? ''));
-          setNavexStatus(((o.meta?._navex_status as 'sent' | 'failed') ?? 'idle'));
-          setNavexMsg(String((o.meta?._navex_error as string) ?? ''));
-          setFdTracking(String((o.meta?._fd_tracking as string) ?? ''));
-          setFdStatus(((o.meta?._fd_status as 'sent' | 'failed') ?? 'idle'));
-          setFdMsg(String((o.meta?._fd_error as string) ?? ''));
 
           // Assignment history — fall back to current pointer if no array is stored.
           let history: AssignmentEntry[] = [];
@@ -282,12 +270,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setStatus('');
       setOriginalStatus('');
       setAttempts(1);
-      setNavexTracking('');
-      setNavexStatus('idle');
-      setNavexMsg('');
-      setFdTracking('');
-      setFdStatus('idle');
-      setFdMsg('');
       setAssignmentHistory([]);
       setHistoryOpen(false);
       setDeliveryCompany('');
@@ -438,44 +420,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       if (!res.ok) throw new Error((await res.json()).error ?? 'Erreur');
       const order = await res.json();
 
-      // ── Auto-push to delivery company ────────────────────────────────────
-      const savedId = String(order.id ?? orderId ?? '');
-      const co = deliveryCompany.toLowerCase();
-      if (savedId && co) {
-        if (co.includes('navex') && navexStatus !== 'sent' && !navexTracking) {
-          const r = await fetch(`${apiBase}/navex`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: savedId }),
-          });
-          const d = await r.json().catch(() => ({}));
-          if (r.ok && d?.ok) {
-            setNavexTracking(d.barcode ?? '');
-            setNavexStatus('sent');
-            setNavexMsg('');
-          } else {
-            setNavexStatus('failed');
-            setNavexMsg(d?.error ?? `HTTP ${r.status}`);
-          }
-        } else if (co.includes('first') && fdStatus !== 'sent' && !fdTracking) {
-          const r = await fetch(`${apiBase}/firstdelivery`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: savedId }),
-          });
-          const d = await r.json().catch(() => ({}));
-          if (r.ok && d?.ok) {
-            setFdTracking(d.barcode ?? '');
-            setFdStatus('sent');
-            setFdMsg('');
-          } else {
-            setFdStatus('failed');
-            setFdMsg(d?.error ?? `HTTP ${r.status}`);
-          }
-        }
-      }
-      // ─────────────────────────────────────────────────────────────────────
-
       onSaved?.(order);
       onClose();
     } catch (e) {
@@ -547,102 +491,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 </Field>
               )}
             </div>
-            <Field label="Société de livraison" className="mt-4">
-              <select className="input" value={deliveryCompany} onChange={(e) => setDeliveryCompany(e.target.value)}>
-                <option value="">-</option>
-                <option value="Navex">Navex</option>
-                <option value="First Delivery">First Delivery</option>
-              </select>
-            </Field>
             <Field label="Ajouter une note privée…" className="mt-4">
               <textarea rows={3} className="input" value={privateNote} onChange={(e) => setPrivateNote(e.target.value)} placeholder="Ajouter une note privée…" />
             </Field>
           </Card>
 
           {/* Détails du client */}
-          {isEdit && (
-            <div className="space-y-2">
-              {/* Navex panel */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  {navexTracking && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                        <Check size={12} /> Envoyé à Navex
-                      </span>
-                      <span className="text-xs text-ink-700">
-                        Code à barre : <code className="rounded bg-ink-100 px-2 py-0.5 font-mono">{navexTracking}</code>
-                      </span>
-                    </>
-                  )}
-                  {!navexTracking && navexStatus === 'failed' && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
-                        <AlertTriangle size={12} /> Échec d&apos;envoi Navex
-                      </span>
-                      <span className="text-xs text-red-700">{navexMsg || 'Erreur inconnue'}</span>
-                    </>
-                  )}
-                  {!navexTracking && navexStatus !== 'failed' && (
-                    <span className="text-xs text-ink-700">Pas encore envoyé à Navex.</span>
-                  )}
-                </div>
-              </div>
-              {/* First Delivery panel */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  {fdTracking && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                        <Check size={12} /> Envoyé à First Delivery
-                      </span>
-                      <span className="text-xs text-ink-700">
-                        Code à barre : <code className="rounded bg-ink-100 px-2 py-0.5 font-mono">{fdTracking}</code>
-                      </span>
-                    </>
-                  )}
-                  {!fdTracking && fdStatus === 'failed' && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
-                        <AlertTriangle size={12} /> Échec d&apos;envoi First Delivery
-                      </span>
-                      <span className="text-xs text-red-700">{fdMsg || 'Erreur inconnue'}</span>
-                    </>
-                  )}
-                  {!fdTracking && fdStatus !== 'failed' && (
-                    <span className="text-xs text-ink-700">Pas encore envoyé à First Delivery.</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {assignmentHistory.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setHistoryOpen((v) => !v)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-bold text-ink-900 hover:bg-ink-100"
-                    >
-                      <History size={12} /> Historique ({assignmentHistory.length})
-                    </button>
-                  )}
-                </div>
-                {historyOpen && assignmentHistory.length > 0 && (
-                  <ul className="mt-2 w-full space-y-1 border-t border-ink-200 pt-2 text-xs">
-                    {assignmentHistory.slice().reverse().map((h, i) => {
-                      const label = h.employeeId ? (employeeNames[h.employeeId] ?? h.employeeName ?? h.employeeId) : 'Non assigné';
-                      return (
-                        <li key={i} className="flex items-center justify-between rounded-lg bg-ink-100 px-3 py-2">
-                          <span>
-                            <strong className="text-ink-900">{label}</strong>
-                            {h.by && <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-ink-700">{h.by}</span>}
-                          </span>
-                          <span className="text-ink-700">{new Date(h.at).toLocaleString('fr-FR')}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
 
           <Card title="Détails du client">
             <div className="grid gap-4 md:grid-cols-2">

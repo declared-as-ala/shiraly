@@ -397,16 +397,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       if (idx >= 0) { const next = prev.slice(); next[idx] = o; return next; }
       return [o, ...prev];
     });
-    const navexStatus = o.meta?._navex_status as string | undefined;
-    const navexTracking = o.meta?._navex_tracking as string | undefined;
-    const navexError = o.meta?._navex_error as string | undefined;
-    if (navexStatus === 'sent' && navexTracking) {
-      toast.success(`Commande #${o.number} enregistrée · Navex ✓ ${navexTracking}`);
-    } else if (navexStatus === 'failed') {
-      toast.error(`Commande #${o.number} enregistrée, mais Navex a échoué : ${navexError ?? 'erreur'}`);
-    } else {
-      toast.success(`Commande #${o.number} enregistrée`);
-    }
+    toast.success(`Commande #${o.number} enregistrée`);
     startTransition(() => router.refresh());
   }
 
