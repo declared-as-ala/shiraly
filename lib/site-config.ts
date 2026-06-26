@@ -18,6 +18,8 @@ export const SITE = {
     textColor: '#ffffff',
   },
   contact: {
+    photoUrl: '',
+    phones: ['54588271'],
     email: 'mzaliahmed73@gmail.com',
     phone: '54588271',
     whatsapp: '22479443',
