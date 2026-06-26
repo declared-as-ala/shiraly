@@ -279,19 +279,6 @@ export default function ProfileView() {
         <h2 className="mb-5 flex items-center gap-2 text-lg font-black"><Globe size={18} className="text-brand-500" /> Informations de la boutique</h2>
         <div className="grid gap-6 md:grid-cols-2">
           <div>
-            <p className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-ink-700"><ImageIcon size={13} /> Logo</p>
-            <div className="flex items-center gap-4">
-              {siteInfo.photoUrl && (
-                <div className="relative h-20 w-20 flex-none overflow-hidden rounded-2xl border border-ink-200 bg-ink-100">
-                  <Image src={siteInfo.photoUrl} alt="logo" fill className="object-cover" unoptimized />
-                </div>
-              )}
-              <ImageUploader onUploaded={(img) => setSiteInfo((s) => ({ ...s, photoUrl: img.url }))} className="flex h-20 w-20 flex-none items-center justify-center rounded-2xl border-2 border-dashed border-ink-200 bg-ink-100 text-[10px] font-bold text-ink-700 hover:border-brand-300">
-                <span className="flex flex-col items-center gap-1"><ImageIcon size={16} className="text-brand-500" /> Changer</span>
-              </ImageUploader>
-            </div>
-          </div>
-          <div>
             <p className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-ink-700"><Phone size={13} /> Téléphones</p>
             <div className="space-y-2">
               {siteInfo.phones.map((p, i) => (

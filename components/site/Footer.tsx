@@ -17,8 +17,9 @@ export default function Footer() {
     <footer className="mt-20 bg-brand-700 text-white/80">
       <div className="container-shop grid gap-10 py-12 lg:grid-cols-4">
         <div>
-          <Link href="/" className="inline-flex rounded-xl bg-sand-50 px-4 py-3" aria-label={t.common.brandName}>
-            <Image src="/star-logo.svg" alt={t.common.brandName} width={150} height={42} className="h-10 w-auto object-contain" />
+          <Link href="/" className="flex items-center gap-3" aria-label={t.common.brandName}>
+            <Image src="/star-logo.svg" alt="" width={40} height={40} className="h-9 w-auto sm:h-10" />
+            <span className="font-heading text-xl font-black tracking-tight text-white sm:text-2xl">{t.common.brandName}</span>
           </Link>
           <p className="mt-3 text-sm text-white/60">{t.footer.tagline}</p>
           <div className="mt-4 flex flex-wrap gap-2">

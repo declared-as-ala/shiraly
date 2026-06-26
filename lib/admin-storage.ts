@@ -57,12 +57,16 @@ export async function getSiteSettings(): Promise<Partial<SiteSettings>> {
 
 export async function setSiteSettings(patch: Partial<SiteSettings>): Promise<void> {
   await setMongoValue(SETTINGS_KEY, patch);
-  await fs.mkdir(DATA_DIR, { recursive: true });
   try {
-    const current = JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8'));
-    await fs.writeFile(SETTINGS_FILE, JSON.stringify({ ...current, ...patch }, null, 2), 'utf8');
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    try {
+      const current = JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8'));
+      await fs.writeFile(SETTINGS_FILE, JSON.stringify({ ...current, ...patch }, null, 2), 'utf8');
+    } catch {
+      await fs.writeFile(SETTINGS_FILE, JSON.stringify(patch, null, 2), 'utf8');
+    }
   } catch {
-    await fs.writeFile(SETTINGS_FILE, JSON.stringify(patch, null, 2), 'utf8');
+    // file fallback not available (read-only filesystem on Vercel/serverless)
   }
 }
 
