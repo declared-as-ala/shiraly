@@ -8,7 +8,9 @@ import CartDrawer from '@/components/site/CartDrawer';
 import Announcement from '@/components/site/Announcement';
 import NavProgress from '@/components/NavProgress';
 import { LanguageProvider } from '@/components/site/LanguageProvider';
+import { SiteConfigProvider } from '@/components/site/SiteConfigContext';
 import { LANG_COOKIE, normalizeLang } from '@/lib/i18n';
+import { SITE } from '@/lib/site-config';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair' });
@@ -26,12 +28,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang={initialLang} dir={initialLang === 'ar' ? 'rtl' : 'ltr'}>
       <body className={`${inter.variable} ${playfair.variable} ${cairo.variable} font-sans antialiased`}>
         <LanguageProvider initialLang={initialLang}>
-          <QueryProvider>
-            <NavProgress />
-            <Announcement />
-            {children}
-            <CartDrawer />
-          </QueryProvider>
+          <SiteConfigProvider contact={SITE.contact}>
+            <QueryProvider>
+              <NavProgress />
+              <Announcement />
+              {children}
+              <CartDrawer />
+            </QueryProvider>
+          </SiteConfigProvider>
         </LanguageProvider>
       </body>
     </html>
