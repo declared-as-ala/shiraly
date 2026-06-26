@@ -68,9 +68,9 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       fetch(`/api/admin/products/${productId}`)
         .then((r) => r.json())
         .then((p: Product) => {
-          const options = (p.attributes ?? []).map((a) => ({
+          const options = (p.attributes ?? []).map((a): { label: string; type: 'text' | 'select' | 'radio'; values: string[] } => ({
             label: a.name,
-            type: a.variation ? 'select' : 'text' as const,
+            type: a.variation ? 'select' : 'text',
             values: a.options,
           }));
           setForm({

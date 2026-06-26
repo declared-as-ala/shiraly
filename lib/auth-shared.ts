@@ -7,6 +7,12 @@ export const LEGACY_COOKIE = 'shiraly_admin';
 
 export type Role = 'admin' | 'employee';
 
+export type Session = {
+  role: Role;
+  userId: string;
+  name: string;
+};
+
 /** Middleware-safe: checks cookie format without Node crypto. */
 export function cookieLooksValid(signed: string | undefined): boolean {
   if (!signed) return false;
