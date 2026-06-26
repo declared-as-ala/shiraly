@@ -52,9 +52,9 @@ export default function Header({ categories }: { categories: { name: string; slu
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
 
-          <Link href="/" className="flex items-center gap-2.5" aria-label={t.common.brandName}>
-            <Image src="/star-logo.svg" alt="" width={40} height={40} priority unoptimized className="h-9 w-9 sm:h-10 sm:w-10" />
-            <span className="font-heading text-xl font-black tracking-tight text-ink-900 sm:text-2xl">{t.common.brandName}</span>
+          <Link href="/" className="flex shrink-0 items-center gap-2" aria-label={t.common.brandName}>
+            <Image src="/star-logo.svg" alt="" width={40} height={40} priority unoptimized className="h-8 w-8 sm:h-10 sm:w-10" />
+            <span className="font-heading text-lg font-black tracking-tight text-ink-900 sm:text-2xl">{t.common.brandName}</span>
           </Link>
 
           <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">

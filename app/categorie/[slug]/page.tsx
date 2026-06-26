@@ -26,12 +26,17 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
     <>
       <Header categories={categories.map((c) => ({ name: c.name, slug: c.slug }))} />
       <main className="container-shop py-10">
-        <header className="mb-8">
+        <header className="mb-10">
           <p className="text-xs font-bold uppercase tracking-widest text-brand-500">{t.category.label}</p>
-          <h1 className="mt-2 text-4xl font-black text-ink-900">{cat.name}</h1>
-          <p className="mt-1 text-ink-700">{t.common.articlesCount(result.total || result.items.length)}</p>
+          <h1 className="mt-2 text-4xl font-black leading-tight text-ink-900">{cat.name}</h1>
+          <p className="mt-1 text-ink-500">{t.common.articlesCount(result.total || result.items.length)}</p>
           {cat.description && (
-            <div className="prose prose-sm mt-4 max-w-none text-ink-700" dangerouslySetInnerHTML={{ __html: cat.description }} />
+            <div className="relative mt-6 overflow-hidden rounded-2xl border border-ink-100 bg-gradient-to-br from-sand-50 to-white p-6 sm:p-8">
+              <div className="absolute -end-6 -top-6 h-32 w-32 rounded-full bg-brand-500/5 blur-2xl" />
+              <p className="relative text-base leading-relaxed text-ink-700 sm:text-lg sm:leading-relaxed">
+                {cat.description}
+              </p>
+            </div>
           )}
         </header>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
