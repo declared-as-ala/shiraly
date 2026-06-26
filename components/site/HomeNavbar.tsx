@@ -7,6 +7,7 @@ import { Search, Heart, ShoppingBag, Menu, X, ChevronDown } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { useCartUI } from '@/lib/cart-ui';
 import { useWishlist } from '@/lib/wishlist';
+import SearchOverlay from './SearchOverlay';
 
 const LINKS = [
   { href: '/', label: 'Home' },
@@ -19,6 +20,7 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [colOpen, setColOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const colRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +48,8 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
     'relative grid h-10 w-10 place-items-center rounded-full text-ink-900 transition hover:bg-ink-900/5 hover:text-brand-600';
 
   return (
-    <header
+    <>
+      <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
         scrolled || open
           ? 'bg-sand-50/95 shadow-[0_6px_28px_-16px_rgba(61,43,31,0.45)] backdrop-blur'
@@ -117,9 +120,9 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
 
         {/* Icons */}
         <div className="flex items-center gap-1 lg:flex-1 lg:justify-end">
-          <a href="#products" className={iconBtn} aria-label="Voir les produits">
+          <button onClick={() => setSearchOpen(true)} className={iconBtn} aria-label="Rechercher">
             <Search size={20} />
-          </a>
+          </button>
           <Link href="/wishlist" className={iconBtn} aria-label="Liste de souhaits">
             <Heart size={20} />
             {mounted && wishCount > 0 && (
@@ -140,9 +143,13 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
       </div>
 
       {/* Mobile menu */}
-      {open && (
-        <nav className="border-t border-ink-200 bg-sand-50 px-4 py-3 lg:hidden">
-          {[...LINKS, { href: '#products', label: 'Collections' }].map((l) => (
+      <div
+        className={`overflow-hidden transition-all duration-300 ease-in-out lg:hidden ${
+          open ? 'max-h-[640px] opacity-100' : 'max-h-0 opacity-0'
+        }`}
+      >
+        <nav className="border-t border-ink-200 bg-sand-50 px-4 py-3">
+          {LINKS.map((l) => (
             <Link
               key={l.label}
               href={l.href}
@@ -160,7 +167,7 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
                   key={c.slug}
                   href={`/categorie/${c.slug}`}
                   onClick={() => setOpen(false)}
-                  className="block rounded-lg px-3 py-2 font-semibold text-ink-900 hover:bg-ink-100"
+                  className="block rounded-lg px-3 py-2.5 font-semibold text-ink-900 hover:bg-ink-100"
                 >
                   {c.name}
                 </Link>
@@ -168,7 +175,9 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
             </>
           )}
         </nav>
-      )}
-    </header>
+      </div>
+      </header>
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+    </>
   );
 }
