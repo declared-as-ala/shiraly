@@ -1,0 +1,22 @@
+[
+  {
+    "id": "254f74aa-6ca5-4010-9fab-951457df04fa",
+    "email": "ala@ala.com",
+    "name": "ala",
+    "passwordHash": "cdd6dd36d99fed7c5d452580f773909af35d424be54aa3c0bc1573d97582a5b3bc849d9695005aadca08fbf2422848b790a9fbd7501b03c68b39655da46f8d54",
+    "salt": "baea599b152aace2671a16d9a172801e",
+    "active": true,
+    "createdAt": "2026-05-18T20:51:09.382Z",
+    "updatedAt": "2026-05-18T20:53:03.294Z"
+  },
+  {
+    "id": "6715f7a6-64b2-4f9b-8870-b247b8461f62",
+    "email": "test@test.com",
+    "name": "test",
+    "passwordHash": "321ba24364cdf8f9888cf827c63378290d354d8e07e93efa3fe34d204ee0f6de3af8b4a0f9a490c7fbabb93fb8231683eb2aa81934e14ddf48b8108c66fab854",
+    "salt": "0e1da26d634687791030c21df4dc15d6",
+    "active": true,
+    "createdAt": "2026-05-21T15:09:33.077Z",
+    "updatedAt": "2026-05-21T15:09:33.077Z"
+  }
+]

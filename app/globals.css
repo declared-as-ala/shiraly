@@ -1,0 +1,179 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;600;700;900&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-50: #F5EDE6;
+  --primary-100: #EBE0D6;
+  --primary-200: #D9C7B8;
+  --primary-300: #8B5E34;
+  --secondary-200: #6B4423;
+  --tertiary-100: #F5F0EB;
+  --tertiary-200: #E8DED5;
+  --tertiary-300: #6B5846;
+  --cta: #8B5E34;
+}
+
+html,
+body {
+  background: #FBF7F2;
+  color: #3D2B1F;
+}
+
+body {
+  font-family: Inter, Cairo, system-ui, sans-serif;
+}
+
+html[dir="rtl"] body,
+body.rtl {
+  font-family: Cairo, Inter, system-ui, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 py-3 font-bold text-sand-50 shadow-soft transition hover:bg-brand-600 active:scale-[.98];
+  }
+
+  .btn-cta {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-cta px-6 py-3.5 font-black text-sand-50 shadow-cta transition hover:bg-cta-dark active:scale-[.98];
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-50;
+  }
+
+  .card {
+    @apply rounded-2xl border border-ink-200 bg-white shadow-card;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-ink-200 bg-white px-4 py-3 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-50;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700;
+  }
+
+  .container-shop {
+    @apply mx-auto max-w-7xl px-4 lg:px-8;
+  }
+}
+
+/* Top announcement bar */
+.announce-bar {
+  background: linear-gradient(
+    90deg,
+    var(--primary-300),
+    var(--secondary-200)
+  );
+  color: #FBF7F2;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+html[dir="rtl"] .announce-bar {
+  letter-spacing: 0;
+}
+
+/* Sticky CTA shake */
+.shake-cta {
+  animation: shake 1.5s ease-in-out infinite;
+}
+
+/* Drawer animations */
+.drawer-overlay {
+  @apply pointer-events-none fixed inset-0 z-40 bg-slate-900/40 opacity-0 transition;
+}
+
+.drawer-overlay.open {
+  @apply pointer-events-auto opacity-100;
+}
+
+.drawer {
+  @apply fixed right-0 top-0 z-50 h-screen w-full max-w-[1100px] translate-x-full bg-white shadow-2xl transition-transform;
+}
+
+.drawer.open {
+  @apply translate-x-0;
+}
+
+/* RTL for Arabic text inside cards */
+[dir="rtl"],
+.rtl {
+  direction: rtl;
+  font-family: Cairo, Inter, system-ui, sans-serif;
+}
+
+/* Smooth in-page anchor scrolling (hero CTA → #products) */
+html { scroll-behavior: smooth; }
+
+/* ── Premium homepage animations ─────────────────────────────────────── */
+
+/* Scroll-reveal (driven by Reveal.tsx) */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero entrance + subtle parallax zoom */
+@keyframes heroFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes heroZoom {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+@keyframes riseFade {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero-fade { animation: heroFade 1.1s ease both; }
+.hero-zoom { animation: heroZoom 18s ease-in-out infinite alternate; }
+.hero-rise { animation: riseFade 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.delay-150 { animation-delay: 0.15s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-500 { animation-delay: 0.5s; }
+
+/* Scroll indicator */
+@keyframes scrollNudge {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(6px); opacity: 1; }
+}
+.scroll-nudge { animation: scrollNudge 1.8s ease-in-out infinite; }
+
+/* Animated hairline used in the editorial section */
+@keyframes lineGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.line-grow {
+  transform-origin: center;
+  animation: lineGrow 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Respect reduced-motion */
+/* Dropdown entrance */
+@keyframes animateIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: animateIn 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .hero-fade, .hero-zoom, .hero-rise, .scroll-nudge, .line-grow,
+  .shake-cta { animation: none !important; }
+}
