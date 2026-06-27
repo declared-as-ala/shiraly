@@ -69,9 +69,7 @@ export default function HomeNavbar({ categories }: { categories: { name: string;
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 lg:flex-1" aria-label="Shiraly">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-700 sm:h-10 sm:w-10">
-            <Image src="/star-logo.svg" alt="" width={40} height={40} priority unoptimized className="h-5 w-5 sm:h-6 sm:w-6" />
-          </span>
+          <Image src="/star-logo-dark.svg" alt="" width={40} height={40} priority unoptimized className="h-8 w-8 sm:h-9 sm:w-9" />
           <span className="font-heading text-xl font-semibold uppercase tracking-[0.18em] text-ink-900 sm:text-2xl">Shiraly</span>
         </Link>
 
