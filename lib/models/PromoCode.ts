@@ -22,7 +22,6 @@ const PromoCodeSchema = new Schema({
   selectedCategoryIds: [{ type: String }],
 }, { timestamps: true });
 
-PromoCodeSchema.index({ code: 1 });
 PromoCodeSchema.index({ active: 1, expiresAt: 1 });
 
 const PromoCodeModel = models.PromoCode || model('PromoCode', PromoCodeSchema);

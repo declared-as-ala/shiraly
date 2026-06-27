@@ -2,6 +2,7 @@ import type { PromoCodeData, PromoCodeCreateInput, PromoCodeUpdateInput, PromoLi
 import type { PromoService } from '../promo-service';
 import connect from '@/lib/mongodb';
 import PromoCodeModel from '@/lib/models/PromoCode';
+import ProductModel from '@/lib/models/Product';
 import OrderModel from '@/lib/models/Order';
 import { validatePromoCode, calculateDiscountAmount } from '@/lib/promo-calculator';
 
@@ -149,7 +150,20 @@ export class MongoPromoService implements PromoService {
     if (!promo) {
       return { valid: false, code: code.toUpperCase().trim(), error: 'Ce code promo est invalide.' };
     }
-    return validatePromoCode(promo, cart);
+
+    let cartProductCategoryIds: Record<string, string[]> | undefined;
+
+    if (promo.applicableTo === 'SPECIFIC_CATEGORIES') {
+      cartProductCategoryIds = {};
+      const productIds = [...new Set(cart.items.map((i) => i.productId))];
+      const products = await ProductModel.find({ _id: { $in: productIds } }).select('categoryIds').lean();
+      for (const p of products) {
+        const pDoc = p as Record<string, unknown>;
+        cartProductCategoryIds[String(pDoc._id)] = (pDoc.categoryIds as string[]) ?? [];
+      }
+    }
+
+    return validatePromoCode(promo, { ...cart, cartProductCategoryIds });
   }
 
   async incrementUsage(id: string): Promise<void> {

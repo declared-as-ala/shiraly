@@ -3,7 +3,7 @@ import type { PromoCodeData, PromoValidationResult, CartItem } from '@/types';
 type CartContext = {
   items: CartItem[];
   subtotal: number;
-  customerEmail?: string;
+  cartProductCategoryIds?: Record<string, string[]>;
 };
 
 function isExpired(promo: PromoCodeData): boolean {
@@ -30,6 +30,12 @@ function isApplicableToCart(promo: PromoCodeData, cart: CartContext): boolean {
   if (promo.applicableTo === 'ALL_PRODUCTS') return true;
   if (promo.applicableTo === 'SPECIFIC_PRODUCTS') {
     return cart.items.some((item) => promo.selectedProductIds.includes(item.productId));
+  }
+  if (promo.applicableTo === 'SPECIFIC_CATEGORIES' && cart.cartProductCategoryIds) {
+    return cart.items.some((item) => {
+      const cats = cart.cartProductCategoryIds![item.productId];
+      return cats && cats.some((c) => promo.selectedCategoryIds.includes(c));
+    });
   }
   return true;
 }
