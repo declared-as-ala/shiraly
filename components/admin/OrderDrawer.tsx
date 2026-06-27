@@ -588,32 +588,31 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 {lines.length > 0 && (
                   <tfoot>
                     <tr>
-                      <td colSpan={4} />
-                      <td colSpan={2} className="px-3 pt-4">
-                        <div className="space-y-1 rounded-xl bg-ink-100 px-4 py-3">
-                          <div className="flex items-center justify-between gap-2 text-sm text-ink-700">
+                      <td colSpan={2} />
+                      <td colSpan={4} className="px-3 pt-4">
+                        <div className="ml-auto max-w-sm space-y-2 rounded-xl bg-ink-100 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3 text-ink-700">
                             <span className="text-xs font-bold uppercase tracking-wider">Sous-total</span>
-                            <span className="text-sm font-bold">{formatPrice(subtotal)}</span>
+                            <span className="whitespace-nowrap text-sm font-bold">{formatPrice(subtotal)}</span>
                           </div>
-                          <div className="flex items-center justify-between gap-2 text-sm text-ink-700">
+                          <div className="flex items-center justify-between gap-3 text-ink-700">
                             <span className="text-xs font-bold uppercase tracking-wider">Livraison</span>
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
                                 value={shipping}
                                 onChange={(e) => setShipping(Math.max(0, parseFloat(e.target.value) || 0))}
-                                className="h-7 w-20 rounded bg-white px-2 py-0.5 text-right text-xs font-bold text-ink-900 border border-ink-200 outline-none focus:border-brand-500"
+                                className="h-8 w-20 rounded-lg border border-ink-200 bg-white px-2 text-right text-sm font-bold text-ink-900 outline-none focus:border-brand-500"
                               />
                               <span className="text-xs font-bold text-ink-700">DT</span>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between gap-2 border-t border-ink-200 pt-2">
+                          <div className="flex items-center justify-between gap-3 border-t border-ink-200 pt-2">
                             <span className="text-xs font-black uppercase tracking-wider text-ink-900">Total</span>
-                            <span className="text-lg font-black text-brand-500">{formatPrice(total)}</span>
+                            <span className="whitespace-nowrap text-lg font-black text-brand-500">{formatPrice(total)}</span>
                           </div>
                         </div>
                       </td>
-                      <td />
                     </tr>
                   </tfoot>
                 )}

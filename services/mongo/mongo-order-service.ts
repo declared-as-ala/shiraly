@@ -7,12 +7,18 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
   const d = doc as Record<string, unknown>;
   const customer = d.customer as Record<string, unknown>;
   const items = (d.items as Array<Record<string, unknown>>) ?? [];
+  // Fall back to (line items + shipping) when the stored total is missing/0
+  // (e.g. orders created from checkout drafts that never persisted a total).
+  const shippingVal = Number(d.shipping) || 0;
+  const itemsTotal = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
+  const storedTotal = Number(d.total) || 0;
+  const total = storedTotal > 0 ? storedTotal : itemsTotal + shippingVal;
   return {
     id: String(d._id),
     number: d.number as string,
     status: (d.status as OrderStatus) ?? 'pending',
     currency: (d.currency as string) ?? 'TND',
-    total: d.total as number,
+    total,
     createdAt: (d.createdAt as string) ?? (d.createdAt as string) ?? new Date().toISOString(),
     customer: {
       firstName: customer.firstName as string,
