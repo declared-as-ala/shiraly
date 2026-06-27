@@ -1,117 +1,58 @@
 import 'server-only';
+import { createClientAsync } from 'soap';
 
 /**
  * Best Delivery (best-delivery.net) SOAP integration — backend only.
  *
- * Dependency-free: builds SOAP 1.1 envelopes and POSTs them with fetch, then
- * parses responses with a tolerant (namespace-agnostic) XML reader. This avoids
- * the heavy `soap` package and works in Next.js server routes.
+ * Uses the WSDL-driven `soap` client (same behaviour as Best Delivery's official
+ * "tester with proxy"): it reads the WSDL and builds correct envelopes
+ * automatically (namespace, parameter order, rpc/document style, encoding).
  *
  * Docs: https://doc.best-delivery.net/   WSDL: serviceShipments.php?wsdl
- *
- * NOTE: The SOAP target namespace + a couple of element names below are based on
- * the documented field names. If the live WSDL uses different namespaces, adjust
- * NAMESPACE / the wrapper element names — the response parser is already tolerant
- * of namespace prefixes, so only the request side may need tuning.
  */
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const WSDL_URL = process.env.BEST_DELIVERY_WSDL_URL ?? 'https://api.best-delivery.net/serviceShipments.php?wsdl';
 const LOGIN = process.env.BEST_DELIVERY_LOGIN ?? '';
 const PASSWORD = process.env.BEST_DELIVERY_PASSWORD ?? '';
-// Target namespace for the service — override via env if the WSDL differs.
-const NAMESPACE = process.env.BEST_DELIVERY_NAMESPACE ?? 'urn:serviceShipments';
-
-/** SOAP endpoint = WSDL URL without the ?wsdl query. */
-function endpoint(): string {
-  return WSDL_URL.replace(/\?wsdl.*$/i, '');
-}
+const TIMEOUT_MS = Number(process.env.BEST_DELIVERY_TIMEOUT_MS) || 20000;
 
 export function isConfigured(): boolean {
   return Boolean(LOGIN && PASSWORD && WSDL_URL);
 }
 
-const TIMEOUT_MS = Number(process.env.BEST_DELIVERY_TIMEOUT_MS) || 20000;
+type SoapClient = Awaited<ReturnType<typeof createClientAsync>>;
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' });
-  } finally {
-    clearTimeout(timer);
+let clientPromise: Promise<SoapClient> | null = null;
+
+/** Lazily create and cache the SOAP client built from the live WSDL. */
+async function getClient(): Promise<SoapClient> {
+  if (!isConfigured()) throw new Error('Best Delivery non configuré (BEST_DELIVERY_LOGIN/PASSWORD/WSDL_URL).');
+  if (!clientPromise) {
+    clientPromise = createClientAsync(WSDL_URL, { wsdl_options: { timeout: TIMEOUT_MS } as Record<string, unknown> })
+      .catch((e) => { clientPromise = null; throw e; });
   }
+  return clientPromise;
 }
 
-// ── WSDL introspection (the equivalent of $client->__getFunctions()) ───────────
-// We read the REAL targetNamespace + operation names + soapAction from the live
-// WSDL and build envelopes from those. A wrong namespace is what makes PHP
-// SoapServer reply "Procedure 'X' not present" for every operation.
-type WsdlOp = { name: string; soapAction: string | null };
-let wsdlCache: { at: number; targetNamespace: string | null; ops: WsdlOp[] } | null = null;
-const OPS_TTL_MS = 5 * 60 * 1000;
-
-async function loadWsdl(force = false): Promise<NonNullable<typeof wsdlCache>> {
-  if (!force && wsdlCache && Date.now() - wsdlCache.at < OPS_TTL_MS) return wsdlCache;
-  const res = await fetchWithTimeout(WSDL_URL, { method: 'GET' });
-  if (!res.ok) throw new Error(`Impossible de charger le WSDL (HTTP ${res.status}).`);
-  const xml = await res.text();
-
-  const tns = xml.match(/<(?:[\w.-]+:)?definitions\b[^>]*\btargetNamespace="([^"]+)"/i);
-  const targetNamespace = tns ? tns[1] : null;
-
-  const ops = new Map<string, WsdlOp>();
-  // Block-form <operation name="X"> … <soap:operation soapAction="Y"/> … </operation>
-  const blockRe = /<(?:[\w.-]+:)?operation\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?operation>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = blockRe.exec(xml)) !== null) {
-    const name = m[1].match(/\bname="([^"]+)"/i)?.[1];
-    if (!name) continue;
-    const action = m[2].match(/soapAction="([^"]*)"/i)?.[1] ?? null;
-    const prev = ops.get(name.toLowerCase());
-    ops.set(name.toLowerCase(), { name, soapAction: action ?? prev?.soapAction ?? null });
-  }
-  // Self-closing <operation name="X"/> (portType in some WSDLs)
-  const selfRe = /<(?:[\w.-]+:)?operation\b([^>]*)\/>/gi;
-  while ((m = selfRe.exec(xml)) !== null) {
-    const name = m[1].match(/\bname="([^"]+)"/i)?.[1];
-    if (name && !ops.has(name.toLowerCase())) ops.set(name.toLowerCase(), { name, soapAction: null });
-  }
-
-  wsdlCache = { at: Date.now(), targetNamespace, ops: [...ops.values()] };
-  return wsdlCache;
+function withTimeout<T>(p: Promise<T>, ms = TIMEOUT_MS, label = 'Best Delivery'): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label}: délai dépassé (${ms}ms)`)), ms)),
+  ]);
 }
 
-/** Returns the operation names + namespace exposed by the live WSDL (cached 5 min). */
-export async function describe(force = false): Promise<{ wsdlUrl: string; targetNamespace: string | null; operations: string[] }> {
-  const w = await loadWsdl(force);
-  return { wsdlUrl: WSDL_URL, targetNamespace: w.targetNamespace, operations: w.ops.map((o) => o.name) };
-}
+// ── Tunisia governorates (validation) ────────────────────────────────────────
+export const TUNISIA_GOVERNORATES = [
+  'Ariana', 'Béja', 'Ben Arous', 'Bizerte', 'Gabès', 'Gafsa', 'Jendouba',
+  'Kairouan', 'Kasserine', 'Kébili', 'La Manouba', 'Le Kef', 'Mahdia',
+  'Médenine', 'Monastir', 'Nabeul', 'Sfax', 'Sidi Bouzid', 'Siliana',
+  'Sousse', 'Tataouine', 'Tozeur', 'Tunis', 'Zaghouan',
+] as const;
 
-/** Safe diagnostics for the admin debug panel — never exposes the password. */
-export async function getDiagnostics(): Promise<{
-  wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
-  targetNamespace: string | null; operations: string[];
-  hasGetOrder: boolean; hasGetRecette: boolean; error?: string;
-}> {
-  const base = { wsdlUrl: WSDL_URL, login: LOGIN || null, configured: isConfigured() };
-  try {
-    const { operations, targetNamespace } = await describe(true);
-    const has = (n: string) => operations.some((o) => o.toLowerCase() === n.toLowerCase());
-    return { ...base, ok: true, targetNamespace, operations, hasGetOrder: has('GetOrder'), hasGetRecette: has('GetRecette') };
-  } catch (e) {
-    return { ...base, ok: false, targetNamespace: null, operations: [], hasGetOrder: false, hasGetRecette: false, error: e instanceof Error ? e.message : 'Erreur WSDL' };
-  }
-}
-
-/** Case-insensitive check that an operation exists in the WSDL. */
-export async function operationExists(name: string): Promise<boolean> {
-  try {
-    const { operations } = await describe();
-    return operations.some((o) => o.toLowerCase() === name.toLowerCase());
-  } catch {
-    return false; // if the WSDL can't be read, treat as unavailable
-  }
+const GOV_NORMALIZED = new Map(TUNISIA_GOVERNORATES.map((g) => [normalizeGov(g), g]));
+function normalizeGov(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 // ── Status code mapping (per Best Delivery docs) ───────────────────────────────
@@ -123,13 +64,11 @@ export const BEST_DELIVERY_STATUS: Record<string, string> = {
   '32': 'Reçu payé', '40': 'Delete Depot', '41': 'Delete En cours',
   '45': 'Retour Échange livré au client', '46': 'Retour Échange Refusée par client',
 };
-
 export function statusLabel(code: string | null | undefined): string | null {
   if (code === null || code === undefined || code === '') return null;
   return BEST_DELIVERY_STATUS[String(code).trim()] ?? null;
 }
 
-/** Thrown when an operation is documented but not present on the live WSDL. */
 export class OperationNotAvailableError extends Error {
   constructor(op: string) {
     super(`L'opération « ${op} » est documentée mais non exposée par le WSDL actuel. Contactez Best Delivery ou utilisez leur endpoint proxy.`);
@@ -137,215 +76,168 @@ export class OperationNotAvailableError extends Error {
   }
 }
 
-// ── Tunisia governorates (validation) ────────────────────────────────────────
-export const TUNISIA_GOVERNORATES = [
-  'Ariana', 'Béja', 'Ben Arous', 'Bizerte', 'Gabès', 'Gafsa', 'Jendouba',
-  'Kairouan', 'Kasserine', 'Kébili', 'La Manouba', 'Le Kef', 'Mahdia',
-  'Médenine', 'Monastir', 'Nabeul', 'Sfax', 'Sidi Bouzid', 'Siliana',
-  'Sousse', 'Tataouine', 'Tozeur', 'Tunis', 'Zaghouan',
-] as const;
-
-const GOV_NORMALIZED = new Map(
-  TUNISIA_GOVERNORATES.map((g) => [normalizeGov(g), g]),
-);
-function normalizeGov(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 export type CreatePickupInput = {
-  nom: string;
-  gouvernerat: string;
-  ville: string;
-  adresse: string;
-  tel: string;
-  tel2?: string;
-  designation: string;
-  prix: number;
-  msg?: string;
-  echange: 0 | 1;
+  nom: string; gouvernerat: string; ville: string; adresse: string;
+  tel: string; tel2?: string; designation: string; prix: number; msg?: string; echange: 0 | 1;
 };
-
 export type CreatePickupResult = {
-  hasErrors: boolean;
-  errorsTxt: string | null;
-  codeBarre: string | null; // tracking number
-  url: string | null;       // printable label URL
-  raw: Record<string, unknown>;
+  hasErrors: boolean; errorsTxt: string | null;
+  codeBarre: string | null; url: string | null; raw: unknown;
 };
-
 export type TrackStatusResult = {
-  hasErrors: boolean;
-  errorsTxt: string | null;
-  trackingNumber: string | null;
-  statusCode: string | null;
-  statusMessage: string | null;
-  statusLabel: string | null;  // mapped from the documented status table
-  raw: Record<string, unknown>;
+  hasErrors: boolean; errorsTxt: string | null;
+  trackingNumber: string | null; statusCode: string | null; statusMessage: string | null; statusLabel: string | null; raw: unknown;
 };
-
-export type TrackEvent = {
-  date: string | null;
-  statusCode: string | null;
-  statusMessage: string | null;
-  statusLabel: string | null;
-};
-
-export type TrackHistoryResult = {
-  hasErrors: boolean;
-  errorsTxt: string | null;
-  events: TrackEvent[];
-  raw: Record<string, unknown>;
-};
-
-export type Paginated<T> = {
-  hasErrors: boolean;
-  errorsTxt: string | null;
-  totalPages: number;
-  currentPage: number;
-  items: T[];
-  raw: Record<string, unknown>;
-};
-
+export type TrackEvent = { date: string | null; statusCode: string | null; statusMessage: string | null; statusLabel: string | null };
+export type TrackHistoryResult = { hasErrors: boolean; errorsTxt: string | null; events: TrackEvent[]; raw: unknown };
+export type Paginated<T> = { hasErrors: boolean; errorsTxt: string | null; totalPages: number; currentPage: number; items: T[]; raw: unknown };
 export type ValidationError = { field: string; message: string };
 
 // ── Validation ────────────────────────────────────────────────────────────────
 export function validatePickup(input: Partial<CreatePickupInput>): { ok: boolean; errors: ValidationError[]; gouvernerat?: string } {
   const errors: ValidationError[] = [];
-
   if (!input.nom?.trim()) errors.push({ field: 'nom', message: 'Le nom est obligatoire.' });
   if (!input.ville?.trim()) errors.push({ field: 'ville', message: 'La ville est obligatoire.' });
   if (!input.adresse?.trim()) errors.push({ field: 'adresse', message: "L'adresse est obligatoire." });
   if (!input.designation?.trim()) errors.push({ field: 'designation', message: 'La désignation est obligatoire.' });
 
-  // Phone: Tunisian 8-digit number, optionally prefixed with +216 / 216 / 00216
   const tel = String(input.tel ?? '').replace(/[\s.\-]/g, '');
-  if (!/^(?:\+?216|00216)?\d{8}$/.test(tel)) {
-    errors.push({ field: 'tel', message: 'Numéro de téléphone invalide (8 chiffres attendus).' });
-  }
+  if (!/^(?:\+?216|00216)?\d{8}$/.test(tel)) errors.push({ field: 'tel', message: 'Numéro de téléphone invalide (8 chiffres attendus).' });
   if (input.tel2) {
     const tel2 = String(input.tel2).replace(/[\s.\-]/g, '');
-    if (!/^(?:\+?216|00216)?\d{8}$/.test(tel2)) {
-      errors.push({ field: 'tel2', message: 'Deuxième numéro invalide.' });
-    }
+    if (!/^(?:\+?216|00216)?\d{8}$/.test(tel2)) errors.push({ field: 'tel2', message: 'Deuxième numéro invalide.' });
   }
 
-  // Governorate must be a recognised Tunisian governorate
-  const govKey = normalizeGov(String(input.gouvernerat ?? ''));
-  const canonicalGov = GOV_NORMALIZED.get(govKey);
-  if (!canonicalGov) {
-    errors.push({ field: 'gouvernerat', message: 'Gouvernorat invalide. Doit être un gouvernorat tunisien.' });
-  }
+  const canonicalGov = GOV_NORMALIZED.get(normalizeGov(String(input.gouvernerat ?? '')));
+  if (!canonicalGov) errors.push({ field: 'gouvernerat', message: 'Gouvernorat invalide. Doit être un gouvernorat tunisien.' });
 
-  // Price numeric
-  if (input.prix === undefined || input.prix === null || Number.isNaN(Number(input.prix))) {
-    errors.push({ field: 'prix', message: 'Le prix doit être numérique.' });
-  }
-
-  // echange 0 or 1
-  if (input.echange !== 0 && input.echange !== 1) {
-    errors.push({ field: 'echange', message: "Échange doit valoir 0 ou 1." });
-  }
+  if (input.prix === undefined || input.prix === null || Number.isNaN(Number(input.prix))) errors.push({ field: 'prix', message: 'Le prix doit être numérique.' });
+  if (input.echange !== 0 && input.echange !== 1) errors.push({ field: 'echange', message: 'Échange doit valoir 0 ou 1.' });
 
   return { ok: errors.length === 0, errors, gouvernerat: canonicalGov };
 }
 
-// ── XML helpers ────────────────────────────────────────────────────────────────
-function escapeXml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+// ── Response helpers — tolerant of SOAP output nesting (e.g. { return: {...} }) ──
+function deepFind(obj: unknown, key: string): string | null {
+  const target = key.toLowerCase();
+  const stack: unknown[] = [obj];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur && typeof cur === 'object') {
+      for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
+        if (k.toLowerCase() === target && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) return String(v);
+        if (v && typeof v === 'object') stack.push(v);
+      }
+    }
+  }
+  return null;
 }
-function decodeXml(value: string): string {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+function deepFindArray(obj: unknown, keys: string[]): Record<string, unknown>[] {
+  const targets = keys.map((k) => k.toLowerCase());
+  // 1) prefer an array whose property name matches
+  const s1: unknown[] = [obj];
+  while (s1.length) {
+    const cur = s1.pop();
+    if (cur && typeof cur === 'object') {
+      for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
+        if (targets.includes(k.toLowerCase())) {
+          if (Array.isArray(v)) return v as Record<string, unknown>[];
+          if (v && typeof v === 'object') return [v as Record<string, unknown>]; // single element not arrayified
+        }
+        if (v && typeof v === 'object') s1.push(v);
+      }
+    }
+  }
+  // 2) fallback: any array of objects
+  const s2: unknown[] = [obj];
+  while (s2.length) {
+    const cur = s2.pop();
+    if (cur && typeof cur === 'object') {
+      for (const v of Object.values(cur as Record<string, unknown>)) {
+        if (Array.isArray(v) && v.some((x) => x && typeof x === 'object')) return v as Record<string, unknown>[];
+        if (v && typeof v === 'object') s2.push(v);
+      }
+    }
+  }
+  return [];
 }
-/** First inner value of <tag> (any namespace prefix). */
-function pick(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<(?:[\\w.-]+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${tag}>`, 'i'));
-  return m ? decodeXml(m[1].trim()) : null;
-}
-/** All inner blocks for a repeated <tag>. */
-function pickAll(xml: string, tag: string): string[] {
-  const re = new RegExp(`<(?:[\\w.-]+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${tag}>`, 'gi');
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) out.push(m[1]);
+function flatten(obj: Record<string, unknown>): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === undefined) out[k] = null;
+    else if (typeof v !== 'object') out[k] = String(v);
+  }
   return out;
 }
-function pickNumber(xml: string, tag: string, fallback = 0): number {
-  const v = pick(xml, tag);
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+function hasErrorsOf(res: unknown): { hasErrors: boolean; errorsTxt: string | null } {
+  const he = deepFind(res, 'HasErrors');
+  return { hasErrors: he === '1' || he?.toLowerCase?.() === 'true', errorsTxt: deepFind(res, 'ErrorsTxt') };
 }
-function hasErrorsOf(xml: string): { hasErrors: boolean; errorsTxt: string | null } {
-  const he = pick(xml, 'HasErrors');
-  return { hasErrors: he === '1' || he?.toLowerCase() === 'true', errorsTxt: pick(xml, 'ErrorsTxt') };
+function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return { ...args, pwd: '***', password: args.password ? '***' : undefined };
 }
 
-// ── SOAP core ──────────────────────────────────────────────────────────────────
-function buildEnvelope(operation: string, fields: Record<string, unknown>, namespace: string): string {
-  // Keep '' and 0 — the service's WSDL messages expect every declared element
-  // to be present (the official tester sends them all). Only skip undefined/null.
-  const body = Object.entries(fields)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `<${k}>${escapeXml(v)}</${k}>`)
-    .join('');
-  return `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${namespace}">` +
-    `<soapenv:Body><tns:${operation}>${body}</tns:${operation}></soapenv:Body></soapenv:Envelope>`;
+// ── SOAP invocation ───────────────────────────────────────────────────────────
+/** Find the promisified client method for an operation (case-insensitive). */
+function resolveMethod(client: SoapClient, op: string): ((args: unknown) => Promise<unknown[]>) | null {
+  const c = client as unknown as Record<string, unknown>;
+  const wanted = `${op}async`.toLowerCase();
+  for (const key of Object.keys(c)) {
+    if (key.toLowerCase() === wanted && typeof c[key] === 'function') {
+      return (c[key] as (args: unknown) => Promise<unknown[]>).bind(client);
+    }
+  }
+  return null;
 }
 
-/** Redact credentials before logging. */
-function redact(xml: string): string {
-  return xml.replace(/(<(?:pwd|password)>)[\s\S]*?(<\/(?:pwd|password)>)/gi, '$1***$2');
+async function callSoap(op: string, args: Record<string, unknown>): Promise<unknown> {
+  const client = await getClient();
+  const method = resolveMethod(client, op);
+  if (!method) throw new OperationNotAvailableError(op);
+
+  console.info(`[best-delivery] → ${op}`, redactArgs(args));
+  const [result] = await withTimeout(method(args), TIMEOUT_MS, op);
+  console.info(`[best-delivery] ← ${op}`, JSON.stringify(result)?.slice(0, 4000));
+  return result;
 }
 
-async function callSoap(operation: string, fields: Record<string, unknown>): Promise<string> {
-  if (!isConfigured()) throw new Error('Best Delivery non configuré (BEST_DELIVERY_LOGIN/PASSWORD/WSDL_URL).');
-
-  // Self-configure from the live WSDL: real operation name, namespace + soapAction.
-  // This is what fixes "Procedure 'X' not present" (caused by a namespace mismatch).
-  let opName = operation;
-  let namespace = NAMESPACE;
-  let soapAction: string | null = null;
+/** Whether an operation exists on the live WSDL. */
+export async function operationExists(op: string): Promise<boolean> {
   try {
-    const w = await loadWsdl();
-    if (w.targetNamespace) namespace = w.targetNamespace;
-    const op = w.ops.find((o) => o.name.toLowerCase() === operation.toLowerCase());
-    if (!op) throw new OperationNotAvailableError(operation);
-    opName = op.name;
-    soapAction = op.soapAction;
+    const client = await getClient();
+    return resolveMethod(client, op) !== null;
+  } catch {
+    return false;
+  }
+}
+
+// ── Diagnostics (admin debug; never returns the password) ──────────────────────
+export async function describe(): Promise<{ wsdlUrl: string; targetNamespace: string | null; operations: string[] }> {
+  const client = await getClient();
+  const desc = client.describe() as Record<string, unknown>;
+  const ops = new Set<string>();
+  for (const service of Object.values(desc)) {
+    for (const port of Object.values(service as Record<string, unknown>)) {
+      for (const opName of Object.keys(port as Record<string, unknown>)) ops.add(opName);
+    }
+  }
+  const tns = (client as unknown as { wsdl?: { definitions?: { $targetNamespace?: string } } })?.wsdl?.definitions?.$targetNamespace ?? null;
+  return { wsdlUrl: WSDL_URL, targetNamespace: tns, operations: [...ops] };
+}
+
+export async function getDiagnostics(): Promise<{
+  wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
+  targetNamespace: string | null; operations: string[]; hasGetOrder: boolean; hasGetRecette: boolean; error?: string;
+}> {
+  const base = { wsdlUrl: WSDL_URL, login: LOGIN || null, configured: isConfigured() };
+  try {
+    const { operations, targetNamespace } = await describe();
+    const has = (n: string) => operations.some((o) => o.toLowerCase() === n.toLowerCase());
+    return { ...base, ok: true, targetNamespace, operations, hasGetOrder: has('GetOrder'), hasGetRecette: has('GetRecette') };
   } catch (e) {
-    if (e instanceof OperationNotAvailableError) throw e;
-    console.warn('[best-delivery] WSDL introspection failed, using fallback namespace:', e instanceof Error ? e.message : e);
+    return { ...base, ok: false, targetNamespace: null, operations: [], hasGetOrder: false, hasGetRecette: false, error: e instanceof Error ? e.message : 'Erreur WSDL' };
   }
-
-  const envelope = buildEnvelope(opName, fields, namespace);
-  const url = endpoint();
-  console.info(`[best-delivery] → ${opName} (ns=${namespace})`, redact(envelope));
-
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: soapAction ?? `${namespace}/${opName}`,
-    },
-    body: envelope,
-  });
-
-  const text = await res.text();
-  console.info(`[best-delivery] ← ${opName} (${res.status})`, text.slice(0, 4000));
-
-  if (!res.ok) {
-    const fault = pick(text, 'faultstring') ?? `HTTP ${res.status}`;
-    throw new Error(`Best Delivery SOAP error: ${fault}`);
-  }
-  const fault = pick(text, 'faultstring');
-  if (fault) throw new Error(`Best Delivery SOAP fault: ${fault}`);
-  return text;
 }
 
 // ── Operations ──────────────────────────────────────────────────────────────────
@@ -354,92 +246,55 @@ async function callSoap(operation: string, fields: Record<string, unknown>): Pro
 export async function createPickup(input: CreatePickupInput): Promise<CreatePickupResult> {
   const { ok, errors, gouvernerat } = validatePickup(input);
   if (!ok) {
-    return {
-      hasErrors: true,
-      errorsTxt: errors.map((e) => e.message).join(' '),
-      codeBarre: null, url: null, raw: { validation: errors },
-    };
+    return { hasErrors: true, errorsTxt: errors.map((e) => e.message).join(' '), codeBarre: null, url: null, raw: { validation: errors } };
   }
 
-  // Full parameter set in the exact order the official tester sends — the WSDL
-  // message declares all of these; the unused ones default to 0.
-  const xml = await callSoap('CreatePickup', {
-    nom: input.nom,
-    gouvernerat: gouvernerat,
-    ville: input.ville,
-    adresse: input.adresse,
-    tel: input.tel,
-    tel2: input.tel2 ?? '',
-    designation: input.designation,
-    prix: Number(input.prix),
-    msg: input.msg ?? '',
-    echange: input.echange,
-    login: LOGIN,
-    pwd: PASSWORD,
-    tracking_number: 0,
-    agence: 0,
-    agence_dst: 0,
-    date_add: 0,
-    date_pick: 0,
-    date_stat: 0,
-    nb_article: 0,
-    unlink: 0,
-    modif: 0,
-    id_runsheet: 0,
-    recu: 0,
-    id_recette: 0,
-    transmit: 0,
-    etat: 0,
-    id_frs: 0,
-    frs: 0,
-    paye: 0,
-    code_barre: 0,
+  const res = await callSoap('CreatePickup', {
+    login: LOGIN, pwd: PASSWORD,
+    nom: input.nom, gouvernerat, ville: input.ville, adresse: input.adresse,
+    tel: input.tel, tel2: input.tel2 ?? '', designation: input.designation,
+    prix: Number(input.prix), msg: input.msg ?? '', echange: input.echange,
   });
 
-  const { hasErrors, errorsTxt } = hasErrorsOf(xml);
+  const { hasErrors, errorsTxt } = hasErrorsOf(res);
   return {
-    hasErrors,
-    errorsTxt,
-    codeBarre: pick(xml, 'CodeBarre') ?? pick(xml, 'codeBarre') ?? pick(xml, 'tracking'),
-    url: pick(xml, 'Url') ?? pick(xml, 'url'),
-    raw: { codeBarre: pick(xml, 'CodeBarre'), url: pick(xml, 'Url'), hasErrors, errorsTxt },
+    hasErrors, errorsTxt,
+    codeBarre: deepFind(res, 'CodeBarre'),
+    url: deepFind(res, 'Url'),
+    raw: res,
   };
 }
 
 /** TrackShipmentStatus — current status code + message for a tracking number. */
 export async function trackShipmentStatus(trackingNumber: string): Promise<TrackStatusResult> {
-  const xml = await callSoap('TrackShipmentStatus', { tracking_number: trackingNumber, login: LOGIN, pwd: PASSWORD });
-  const { hasErrors, errorsTxt } = hasErrorsOf(xml);
-  const statusCode = pick(xml, 'status') ?? pick(xml, 'status_code') ?? pick(xml, 'StatusCode') ?? pick(xml, 'code');
+  const res = await callSoap('TrackShipmentStatus', { login: LOGIN, pwd: PASSWORD, tracking_number: trackingNumber });
+  const { hasErrors, errorsTxt } = hasErrorsOf(res);
+  const statusCode = deepFind(res, 'status');
   return {
-    hasErrors,
-    errorsTxt,
-    trackingNumber: pick(xml, 'tracking_number') ?? trackingNumber,
+    hasErrors, errorsTxt,
+    trackingNumber: deepFind(res, 'tracking_number') ?? trackingNumber,
     statusCode,
-    statusMessage: pick(xml, 'message') ?? pick(xml, 'status_message') ?? pick(xml, 'StatusMessage'),
+    statusMessage: deepFind(res, 'message'),
     statusLabel: statusLabel(statusCode),
-    raw: { hasErrors, errorsTxt },
+    raw: res,
   };
 }
 
 /** TrackShipment — full status history for a tracking number. */
 export async function trackShipment(trackingNumber: string): Promise<TrackHistoryResult> {
-  const xml = await callSoap('TrackShipment', { tracking_number: trackingNumber, login: LOGIN, pwd: PASSWORD });
-  const { hasErrors, errorsTxt } = hasErrorsOf(xml);
-  // History entries may be wrapped as <item>, <Shipment>, <history>, or <status>.
-  const blocks =
-    [...pickAll(xml, 'item'), ...pickAll(xml, 'history'), ...pickAll(xml, 'status'), ...pickAll(xml, 'Shipment')];
-  const events: TrackEvent[] = blocks.map((b) => {
-    const code = pick(b, 'status') ?? pick(b, 'status_code') ?? pick(b, 'code') ?? pick(b, 'StatusCode');
+  const res = await callSoap('TrackShipment', { login: LOGIN, pwd: PASSWORD, tracking_number: trackingNumber });
+  const { hasErrors, errorsTxt } = hasErrorsOf(res);
+  const rows = deepFindArray(res, ['status', 'history', 'item']);
+  const events: TrackEvent[] = rows.map((r) => {
+    const code = (deepFind(r, 'status') ?? deepFind(r, 'code') ?? deepFind(r, 'etat'));
     return {
-      date: pick(b, 'date') ?? pick(b, 'Date') ?? pick(b, 'datetime'),
+      date: deepFind(r, 'date') ?? deepFind(r, 'datetime'),
       statusCode: code,
-      statusMessage: pick(b, 'message') ?? pick(b, 'status_message') ?? pick(b, 'StatusMessage') ?? pick(b, 'libelle'),
+      statusMessage: deepFind(r, 'message') ?? deepFind(r, 'libelle'),
       statusLabel: statusLabel(code),
     };
   }).filter((e) => e.date || e.statusCode || e.statusMessage);
-
-  return { hasErrors, errorsTxt, events, raw: { count: events.length, hasErrors, errorsTxt } };
+  return { hasErrors, errorsTxt, events, raw: res };
 }
 
 /** GetOrder — paginated list of Best Delivery orders (guarded: documented but often not exposed). */
@@ -447,16 +302,14 @@ export async function getOrder(page = 1, ofset = 20): Promise<Paginated<Record<s
   if (!(await operationExists('GetOrder'))) {
     return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetOrder').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
   }
-  const xml = await callSoap('GetOrder', { page, ofset, login: LOGIN, pwd: PASSWORD });
-  const { hasErrors, errorsTxt } = hasErrorsOf(xml);
-  const blocks = [...pickAll(xml, 'item'), ...pickAll(xml, 'order'), ...pickAll(xml, 'message')];
-  const items = blocks.map(parseFlatBlock).filter((o) => Object.keys(o).length > 0);
+  const res = await callSoap('GetOrder', { login: LOGIN, pwd: PASSWORD, page, ofset });
+  const { hasErrors, errorsTxt } = hasErrorsOf(res);
   return {
     hasErrors, errorsTxt,
-    totalPages: pickNumber(xml, 'total_pages', 1),
-    currentPage: pickNumber(xml, 'current_page', page),
-    items,
-    raw: { count: items.length },
+    totalPages: Number(deepFind(res, 'total_pages')) || 1,
+    currentPage: Number(deepFind(res, 'current_page')) || page,
+    items: deepFindArray(res, ['message', 'orders', 'item']).map(flatten),
+    raw: res,
   };
 }
 
@@ -465,28 +318,13 @@ export async function getRecette(page = 1, ofset = 20): Promise<Paginated<Record
   if (!(await operationExists('GetRecette'))) {
     return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetRecette').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
   }
-  const xml = await callSoap('GetRecette', { page, ofset, login: LOGIN, pwd: PASSWORD });
-  const { hasErrors, errorsTxt } = hasErrorsOf(xml);
-  const blocks = [...pickAll(xml, 'item'), ...pickAll(xml, 'recette'), ...pickAll(xml, 'message')];
-  const items = blocks.map(parseFlatBlock).filter((o) => Object.keys(o).length > 0);
+  const res = await callSoap('GetRecette', { login: LOGIN, pwd: PASSWORD, page, ofset });
+  const { hasErrors, errorsTxt } = hasErrorsOf(res);
   return {
     hasErrors, errorsTxt,
-    totalPages: pickNumber(xml, 'total_pages', 1),
-    currentPage: pickNumber(xml, 'current_page', page),
-    items,
-    raw: { count: items.length },
+    totalPages: Number(deepFind(res, 'total_pages')) || 1,
+    currentPage: Number(deepFind(res, 'current_page')) || page,
+    items: deepFindArray(res, ['message', 'recettes', 'item']).map(flatten),
+    raw: res,
   };
-}
-
-/** Turn a flat XML block into a key/value record (one level deep). */
-function parseFlatBlock(block: string): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
-  const re = /<(?:[\w.-]+:)?([\w.-]+)[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?\1>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(block)) !== null) {
-    const key = m[1];
-    const val = decodeXml(m[2].trim());
-    if (!/[<>]/.test(val)) out[key] = val; // skip nested containers
-  }
-  return out;
 }

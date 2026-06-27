@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
     if (result.hasErrors) {
       await orderService.update(orderId, {
-        delivery: { provider: 'best_delivery', failed: true, error: result.errorsTxt, payload: result.raw, lastSyncAt: now },
+        delivery: { provider: 'best_delivery', failed: true, error: result.errorsTxt, payload: result.raw as Record<string, unknown> | null, lastSyncAt: now },
       });
       return NextResponse.json({ ok: false, error: result.errorsTxt ?? 'Échec de création', delivery: { failed: true } }, { status: 422 });
     }
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         labelUrl: result.url,
         failed: false,
         error: null,
-        payload: result.raw,
+        payload: result.raw as Record<string, unknown> | null,
         lastSyncAt: now,
       },
     });
