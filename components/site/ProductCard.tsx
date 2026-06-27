@@ -50,7 +50,6 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
 
         <div className="flex flex-1 flex-col p-3">
           <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-bold text-ink-900">{product.name}</h3>
-          <p className="mt-0.5 text-[11px] uppercase tracking-widest text-brand-500">{t.common.brandName}</p>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-base font-black text-brand-600 md:text-lg">{formatPrice(product.price)}</span>
             {discount > 0 && (
