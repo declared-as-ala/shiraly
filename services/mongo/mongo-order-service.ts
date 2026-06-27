@@ -2,8 +2,6 @@ import type { CheckoutPayload, OrderResponse, OrderStatus } from '@/types';
 import type { OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
 import connect from '@/lib/mongodb';
 import OrderModel from '@/lib/models/Order';
-import EmployeeModel from '@/lib/models/Employee';
-import { pickNextInRoundRobin } from '@/lib/round-robin';
 
 function toOrder(doc: Record<string, unknown>): OrderResponse {
   const d = doc as Record<string, unknown>;
@@ -52,16 +50,6 @@ export class MongoOrderService implements OrderService {
   async create(payload: CheckoutPayload): Promise<OrderResponse> {
     await connect();
 
-    const activeEmps = await EmployeeModel.find({ active: true }).select('_id').lean();
-    const activeIds = activeEmps.map((e) => String(e._id));
-    let assignedId: string | null = null;
-    let assignedAt: string | null = null;
-
-    if (activeIds.length > 0) {
-      assignedId = await pickNextInRoundRobin(activeIds);
-      assignedAt = assignedId ? new Date().toISOString() : null;
-    }
-
     const doc = await OrderModel.create({
       number: generateNumber(),
       status: payload.status ?? 'pending',
@@ -92,8 +80,8 @@ export class MongoOrderService implements OrderService {
       paymentMethod: payload.paymentMethod ?? 'cod',
       source: payload.source ?? '',
       attempts: payload.attempts ?? 0,
-      assignedEmployeeId: assignedId,
-      assignedAt,
+      assignedEmployeeId: null,
+      assignedAt: null,
     });
 
     return toOrder(doc.toObject());

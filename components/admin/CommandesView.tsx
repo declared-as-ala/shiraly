@@ -7,7 +7,6 @@ import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
 import { formatPrice } from '@/lib/site-config';
 import type { OrderResponse } from '@/types';
-type Employee = { id: string; name: string; active: boolean }; // kept for order assignment UI
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'En attente',
@@ -76,27 +75,6 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const [orders, setOrders] = useState(initialOrders);
   useEffect(() => { setOrders(initialOrders); }, [initialOrders]);
 
-  // Load employee list once so we can show names + offer reassign.
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  useEffect(() => {
-    fetch('/api/admin/employees', { cache: 'no-store' })
-      .then((r) => r.ok ? r.json() : [])
-      .then((d) => Array.isArray(d) && setEmployees(d))
-      .catch(() => {});
-  }, []);
-  const employeeMap = useMemo(() => Object.fromEntries(employees.map((e) => [e.id, e])), [employees]);
-
-  async function reassign(orderId: string, employeeId: string | null) {
-    const res = await fetch(`/api/admin/orders/${orderId}/assign`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ employeeId }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { toast.error(data?.error ?? 'Erreur d\'assignation'); return; }
-    toast.success(employeeId ? `Réassignée à ${employeeMap[employeeId]?.name ?? '...'}` : 'Désassignée');
-    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, assignedEmployeeId: employeeId } : o));
-  }
 
   // Filters
   const [activeTab, setActiveTab] = useState<'normal' | 'abandoned' | 'trash'>(tabParam);
@@ -579,13 +557,11 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                   aria-label="Tout sélectionner"
                 />
               </th>
-              <th className="px-4 py-3 text-left">ID</th>
               <th className="px-4 py-3 text-left">Client</th>
               <th className="px-4 py-3 text-left">Date</th>
               <th className="px-4 py-3 text-left">Téléphone</th>
               <th className="px-4 py-3 text-left">Ville</th>
               <th className="px-4 py-3 text-left">Statut</th>
-              <th className="px-4 py-3 text-left">Employé</th>
               <th className="px-4 py-3 text-right">Total</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -611,7 +587,6 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                       aria-label={`Sélectionner #${o.number}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-bold">#{o.number}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span>{o.customer.firstName} {o.customer.lastName ?? ''}</span>
@@ -626,21 +601,6 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                       {o.status === 'tentative' ? `Tentative ${o.meta?._mzem_attempts ?? 1}` : (STATUS_LABEL[o.status] ?? o.status)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <select
-                      value={o.assignedEmployeeId ?? ''}
-                      onChange={(e) => reassign(o.id, e.target.value || null)}
-                      className={`h-8 max-w-[160px] rounded-lg border px-2 text-xs font-bold focus:border-brand-500 focus:ring-2 focus:ring-brand-50 outline-none ${
-                        o.assignedEmployeeId ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-amber-200 bg-amber-50 text-amber-700'
-                      }`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <option value="">— Non assigné —</option>
-                      {employees.filter((e) => e.active || e.id === o.assignedEmployeeId).map((e) => (
-                        <option key={e.id} value={e.id}>{e.name}{!e.active ? ' (inactif)' : ''}</option>
-                      ))}
-                    </select>
-                  </td>
                   <td className="px-4 py-3 text-right font-bold">{formatPrice(o.total)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
@@ -654,7 +614,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             })}
             {!filteredOrders.length && (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-ink-700">
+                <td colSpan={8} className="p-8 text-center text-ink-700">
                   {orders.length === 0 ? 'Aucune commande pour le moment.' : 'Aucun résultat.'}
                 </td>
               </tr>

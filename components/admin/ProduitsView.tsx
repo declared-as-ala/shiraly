@@ -162,7 +162,7 @@ export default function ProduitsView({ initialProducts, totals }: Props) {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher (ID, nom, slug, catégorie)…"
+            placeholder="Rechercher (nom, slug, catégorie)…"
             className="input pl-9"
           />
           {query && (
@@ -220,7 +220,6 @@ export default function ProduitsView({ initialProducts, totals }: Props) {
                   aria-label="Tout sélectionner"
                 />
               </th>
-              <th className="px-4 py-3 text-left">ID</th>
               <th className="px-4 py-3 text-left">Image</th>
               <th className="px-4 py-3 text-left">Nom</th>
               <th className="px-4 py-3 text-left">Prix</th>
@@ -301,7 +300,6 @@ export default function ProduitsView({ initialProducts, totals }: Props) {
                       aria-label={`Sélectionner ${p.name}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-bold">{p.id}</td>
                   <td className="px-4 py-3">
                     {p.images[0]?.url ? (
                       <Image src={p.images[0].url} alt={p.name} width={40} height={50} className="rounded-lg object-cover" />
@@ -330,7 +328,7 @@ export default function ProduitsView({ initialProducts, totals }: Props) {
             })}
             {!filteredProducts.length && (
               <tr>
-                <td colSpan={dragEnabled ? 10 : 9} className="p-8 text-center text-ink-700">
+                <td colSpan={dragEnabled ? 9 : 8} className="p-8 text-center text-ink-700">
                   {products.length === 0 ? 'Aucun produit.' : 'Aucun résultat.'}
                 </td>
               </tr>
