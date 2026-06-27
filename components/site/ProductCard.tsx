@@ -1,12 +1,11 @@
 import Link from 'next/link';
 import type { Product } from '@/types';
 import { formatPrice } from '@/lib/site-config';
-import { getDictionary, type Lang } from '@/lib/i18n';
+import type { Lang } from '@/lib/i18n';
 import QuickAdd from '@/components/site/QuickAdd';
 import WishlistButton from '@/components/site/WishlistButton';
 
 export default function ProductCard({ product, lang = 'fr' }: { product: Product; lang?: Lang }) {
-  const t = getDictionary(lang);
   const img = product.images[0]?.url;
   const hoverImg = product.hoverImage;
   const discount = product.onSale && product.regularPrice > product.price
@@ -42,9 +41,11 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
             </span>
           )}
           {!product.inStock && (
-            <span className="absolute start-2 bottom-2 z-10 rounded-md bg-ink-900/85 px-2 py-0.5 text-[11px] font-bold text-white">
-              {t.product.outOfStock}
-            </span>
+            <div className="absolute inset-0 z-10 grid place-items-center bg-ink-900/35">
+              <span className="rotate-[-6deg] rounded-full bg-ink-900/90 px-5 py-1.5 text-xs font-black uppercase tracking-[0.25em] text-white shadow-lg ring-1 ring-white/20">
+                Sold Out
+              </span>
+            </div>
           )}
         </div>
 
