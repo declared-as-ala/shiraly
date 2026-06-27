@@ -31,6 +31,112 @@ export function isConfigured(): boolean {
   return Boolean(LOGIN && PASSWORD && WSDL_URL);
 }
 
+const TIMEOUT_MS = Number(process.env.BEST_DELIVERY_TIMEOUT_MS) || 20000;
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── WSDL introspection (the equivalent of $client->__getFunctions()) ───────────
+// We read the REAL targetNamespace + operation names + soapAction from the live
+// WSDL and build envelopes from those. A wrong namespace is what makes PHP
+// SoapServer reply "Procedure 'X' not present" for every operation.
+type WsdlOp = { name: string; soapAction: string | null };
+let wsdlCache: { at: number; targetNamespace: string | null; ops: WsdlOp[] } | null = null;
+const OPS_TTL_MS = 5 * 60 * 1000;
+
+async function loadWsdl(force = false): Promise<NonNullable<typeof wsdlCache>> {
+  if (!force && wsdlCache && Date.now() - wsdlCache.at < OPS_TTL_MS) return wsdlCache;
+  const res = await fetchWithTimeout(WSDL_URL, { method: 'GET' });
+  if (!res.ok) throw new Error(`Impossible de charger le WSDL (HTTP ${res.status}).`);
+  const xml = await res.text();
+
+  const tns = xml.match(/<(?:[\w.-]+:)?definitions\b[^>]*\btargetNamespace="([^"]+)"/i);
+  const targetNamespace = tns ? tns[1] : null;
+
+  const ops = new Map<string, WsdlOp>();
+  // Block-form <operation name="X"> … <soap:operation soapAction="Y"/> … </operation>
+  const blockRe = /<(?:[\w.-]+:)?operation\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?operation>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(xml)) !== null) {
+    const name = m[1].match(/\bname="([^"]+)"/i)?.[1];
+    if (!name) continue;
+    const action = m[2].match(/soapAction="([^"]*)"/i)?.[1] ?? null;
+    const prev = ops.get(name.toLowerCase());
+    ops.set(name.toLowerCase(), { name, soapAction: action ?? prev?.soapAction ?? null });
+  }
+  // Self-closing <operation name="X"/> (portType in some WSDLs)
+  const selfRe = /<(?:[\w.-]+:)?operation\b([^>]*)\/>/gi;
+  while ((m = selfRe.exec(xml)) !== null) {
+    const name = m[1].match(/\bname="([^"]+)"/i)?.[1];
+    if (name && !ops.has(name.toLowerCase())) ops.set(name.toLowerCase(), { name, soapAction: null });
+  }
+
+  wsdlCache = { at: Date.now(), targetNamespace, ops: [...ops.values()] };
+  return wsdlCache;
+}
+
+/** Returns the operation names + namespace exposed by the live WSDL (cached 5 min). */
+export async function describe(force = false): Promise<{ wsdlUrl: string; targetNamespace: string | null; operations: string[] }> {
+  const w = await loadWsdl(force);
+  return { wsdlUrl: WSDL_URL, targetNamespace: w.targetNamespace, operations: w.ops.map((o) => o.name) };
+}
+
+/** Safe diagnostics for the admin debug panel — never exposes the password. */
+export async function getDiagnostics(): Promise<{
+  wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
+  targetNamespace: string | null; operations: string[];
+  hasGetOrder: boolean; hasGetRecette: boolean; error?: string;
+}> {
+  const base = { wsdlUrl: WSDL_URL, login: LOGIN || null, configured: isConfigured() };
+  try {
+    const { operations, targetNamespace } = await describe(true);
+    const has = (n: string) => operations.some((o) => o.toLowerCase() === n.toLowerCase());
+    return { ...base, ok: true, targetNamespace, operations, hasGetOrder: has('GetOrder'), hasGetRecette: has('GetRecette') };
+  } catch (e) {
+    return { ...base, ok: false, targetNamespace: null, operations: [], hasGetOrder: false, hasGetRecette: false, error: e instanceof Error ? e.message : 'Erreur WSDL' };
+  }
+}
+
+/** Case-insensitive check that an operation exists in the WSDL. */
+export async function operationExists(name: string): Promise<boolean> {
+  try {
+    const { operations } = await describe();
+    return operations.some((o) => o.toLowerCase() === name.toLowerCase());
+  } catch {
+    return false; // if the WSDL can't be read, treat as unavailable
+  }
+}
+
+// ── Status code mapping (per Best Delivery docs) ───────────────────────────────
+export const BEST_DELIVERY_STATUS: Record<string, string> = {
+  '0': 'En attente', '1': 'En cours', '2': 'Livrée', '3': 'Échange livré au client',
+  '4': 'Échange', '5': 'Retour Expéditeur', '6': 'Supprimée', '7': 'Retour Client Agence',
+  '8': 'Au dépôt', '9': 'Inter Dépôt', '10': 'Chez client finale', '11': 'Retour Dépôt',
+  '15': 'Non reçu', '20': 'Retour Exp sac', '30': 'Retour reçu', '31': 'Retour définitif',
+  '32': 'Reçu payé', '40': 'Delete Depot', '41': 'Delete En cours',
+  '45': 'Retour Échange livré au client', '46': 'Retour Échange Refusée par client',
+};
+
+export function statusLabel(code: string | null | undefined): string | null {
+  if (code === null || code === undefined || code === '') return null;
+  return BEST_DELIVERY_STATUS[String(code).trim()] ?? null;
+}
+
+/** Thrown when an operation is documented but not present on the live WSDL. */
+export class OperationNotAvailableError extends Error {
+  constructor(op: string) {
+    super(`L'opération « ${op} » est documentée mais non exposée par le WSDL actuel. Contactez Best Delivery ou utilisez leur endpoint proxy.`);
+    this.name = 'OperationNotAvailableError';
+  }
+}
+
 // ── Tunisia governorates (validation) ────────────────────────────────────────
 export const TUNISIA_GOVERNORATES = [
   'Ariana', 'Béja', 'Ben Arous', 'Bizerte', 'Gabès', 'Gafsa', 'Jendouba',
@@ -71,8 +177,10 @@ export type CreatePickupResult = {
 export type TrackStatusResult = {
   hasErrors: boolean;
   errorsTxt: string | null;
+  trackingNumber: string | null;
   statusCode: string | null;
   statusMessage: string | null;
+  statusLabel: string | null;  // mapped from the documented status table
   raw: Record<string, unknown>;
 };
 
@@ -80,6 +188,7 @@ export type TrackEvent = {
   date: string | null;
   statusCode: string | null;
   statusMessage: string | null;
+  statusLabel: string | null;
 };
 
 export type TrackHistoryResult = {
@@ -177,13 +286,13 @@ function hasErrorsOf(xml: string): { hasErrors: boolean; errorsTxt: string | nul
 }
 
 // ── SOAP core ──────────────────────────────────────────────────────────────────
-function buildEnvelope(operation: string, fields: Record<string, unknown>): string {
+function buildEnvelope(operation: string, fields: Record<string, unknown>, namespace: string): string {
   const body = Object.entries(fields)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `<${k}>${escapeXml(v)}</${k}>`)
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${NAMESPACE}">` +
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="${namespace}">` +
     `<soapenv:Body><tns:${operation}>${body}</tns:${operation}></soapenv:Body></soapenv:Envelope>`;
 }
 
@@ -194,23 +303,39 @@ function redact(xml: string): string {
 
 async function callSoap(operation: string, fields: Record<string, unknown>): Promise<string> {
   if (!isConfigured()) throw new Error('Best Delivery non configuré (BEST_DELIVERY_LOGIN/PASSWORD/WSDL_URL).');
-  const envelope = buildEnvelope(operation, fields);
-  const url = endpoint();
-  console.info(`[best-delivery] → ${operation}`, redact(envelope));
 
-  const res = await fetch(url, {
+  // Self-configure from the live WSDL: real operation name, namespace + soapAction.
+  // This is what fixes "Procedure 'X' not present" (caused by a namespace mismatch).
+  let opName = operation;
+  let namespace = NAMESPACE;
+  let soapAction: string | null = null;
+  try {
+    const w = await loadWsdl();
+    if (w.targetNamespace) namespace = w.targetNamespace;
+    const op = w.ops.find((o) => o.name.toLowerCase() === operation.toLowerCase());
+    if (!op) throw new OperationNotAvailableError(operation);
+    opName = op.name;
+    soapAction = op.soapAction;
+  } catch (e) {
+    if (e instanceof OperationNotAvailableError) throw e;
+    console.warn('[best-delivery] WSDL introspection failed, using fallback namespace:', e instanceof Error ? e.message : e);
+  }
+
+  const envelope = buildEnvelope(opName, fields, namespace);
+  const url = endpoint();
+  console.info(`[best-delivery] → ${opName} (ns=${namespace})`, redact(envelope));
+
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: `${NAMESPACE}/${operation}`,
+      SOAPAction: soapAction ?? `${namespace}/${opName}`,
     },
     body: envelope,
-    // SOAP endpoints are not cacheable
-    cache: 'no-store',
   });
 
   const text = await res.text();
-  console.info(`[best-delivery] ← ${operation} (${res.status})`, text.slice(0, 4000));
+  console.info(`[best-delivery] ← ${opName} (${res.status})`, text.slice(0, 4000));
 
   if (!res.ok) {
     const fault = pick(text, 'faultstring') ?? `HTTP ${res.status}`;
@@ -263,11 +388,14 @@ export async function createPickup(input: CreatePickupInput): Promise<CreatePick
 export async function trackShipmentStatus(trackingNumber: string): Promise<TrackStatusResult> {
   const xml = await callSoap('TrackShipmentStatus', { tracking_number: trackingNumber, login: LOGIN, pwd: PASSWORD });
   const { hasErrors, errorsTxt } = hasErrorsOf(xml);
+  const statusCode = pick(xml, 'status') ?? pick(xml, 'status_code') ?? pick(xml, 'StatusCode') ?? pick(xml, 'code');
   return {
     hasErrors,
     errorsTxt,
-    statusCode: pick(xml, 'status_code') ?? pick(xml, 'StatusCode') ?? pick(xml, 'code'),
-    statusMessage: pick(xml, 'status_message') ?? pick(xml, 'StatusMessage') ?? pick(xml, 'message'),
+    trackingNumber: pick(xml, 'tracking_number') ?? trackingNumber,
+    statusCode,
+    statusMessage: pick(xml, 'message') ?? pick(xml, 'status_message') ?? pick(xml, 'StatusMessage'),
+    statusLabel: statusLabel(statusCode),
     raw: { hasErrors, errorsTxt },
   };
 }
@@ -279,17 +407,24 @@ export async function trackShipment(trackingNumber: string): Promise<TrackHistor
   // History entries may be wrapped as <item>, <Shipment>, <history>, or <status>.
   const blocks =
     [...pickAll(xml, 'item'), ...pickAll(xml, 'history'), ...pickAll(xml, 'status'), ...pickAll(xml, 'Shipment')];
-  const events: TrackEvent[] = blocks.map((b) => ({
-    date: pick(b, 'date') ?? pick(b, 'Date') ?? pick(b, 'datetime'),
-    statusCode: pick(b, 'status_code') ?? pick(b, 'code') ?? pick(b, 'StatusCode'),
-    statusMessage: pick(b, 'status_message') ?? pick(b, 'message') ?? pick(b, 'StatusMessage') ?? pick(b, 'libelle'),
-  })).filter((e) => e.date || e.statusCode || e.statusMessage);
+  const events: TrackEvent[] = blocks.map((b) => {
+    const code = pick(b, 'status') ?? pick(b, 'status_code') ?? pick(b, 'code') ?? pick(b, 'StatusCode');
+    return {
+      date: pick(b, 'date') ?? pick(b, 'Date') ?? pick(b, 'datetime'),
+      statusCode: code,
+      statusMessage: pick(b, 'message') ?? pick(b, 'status_message') ?? pick(b, 'StatusMessage') ?? pick(b, 'libelle'),
+      statusLabel: statusLabel(code),
+    };
+  }).filter((e) => e.date || e.statusCode || e.statusMessage);
 
   return { hasErrors, errorsTxt, events, raw: { count: events.length, hasErrors, errorsTxt } };
 }
 
-/** GetOrder — paginated list of Best Delivery orders. */
+/** GetOrder — paginated list of Best Delivery orders (guarded: documented but often not exposed). */
 export async function getOrder(page = 1, ofset = 20): Promise<Paginated<Record<string, string | null>>> {
+  if (!(await operationExists('GetOrder'))) {
+    return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetOrder').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
+  }
   const xml = await callSoap('GetOrder', { page, ofset, login: LOGIN, pwd: PASSWORD });
   const { hasErrors, errorsTxt } = hasErrorsOf(xml);
   const blocks = [...pickAll(xml, 'item'), ...pickAll(xml, 'order'), ...pickAll(xml, 'message')];
@@ -303,8 +438,11 @@ export async function getOrder(page = 1, ofset = 20): Promise<Paginated<Record<s
   };
 }
 
-/** GetRecette — paginated list of Best Delivery recettes (payments). */
+/** GetRecette — paginated list of Best Delivery recettes (guarded: documented but often not exposed). */
 export async function getRecette(page = 1, ofset = 20): Promise<Paginated<Record<string, string | null>>> {
+  if (!(await operationExists('GetRecette'))) {
+    return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetRecette').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
+  }
   const xml = await callSoap('GetRecette', { page, ofset, login: LOGIN, pwd: PASSWORD });
   const { hasErrors, errorsTxt } = hasErrorsOf(xml);
   const blocks = [...pickAll(xml, 'item'), ...pickAll(xml, 'recette'), ...pickAll(xml, 'message')];

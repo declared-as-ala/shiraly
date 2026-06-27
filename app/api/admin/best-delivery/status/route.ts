@@ -28,7 +28,8 @@ export async function POST(req: Request) {
     const updated = await orderService.update(orderId, {
       delivery: {
         statusCode: result.statusCode,
-        statusMessage: result.statusMessage,
+        // Prefer the provider message, fall back to the documented status label.
+        statusMessage: result.statusMessage ?? result.statusLabel,
         lastSyncAt: new Date().toISOString(),
       },
     });

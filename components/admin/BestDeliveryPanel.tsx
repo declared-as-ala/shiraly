@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Truck, RefreshCw, Printer, RotateCw, Clock, AlertCircle, CheckCircle2, History } from 'lucide-react';
 import type { OrderDelivery } from '@/types';
 
-type TrackEvent = { date: string | null; statusCode: string | null; statusMessage: string | null };
+type TrackEvent = { date: string | null; statusCode: string | null; statusMessage: string | null; statusLabel?: string | null };
 
 /**
  * Best Delivery controls for a single order, shown inside the admin OrderDrawer.
@@ -159,9 +159,9 @@ export default function BestDeliveryPanel({ orderId }: { orderId: string }) {
                       {events.map((ev, i) => (
                         <li key={i} className="relative">
                           <span className="absolute -start-[1.30rem] top-1 grid h-3 w-3 place-items-center rounded-full bg-brand-500 ring-2 ring-white" />
-                          <p className="text-sm font-bold text-ink-900">{ev.statusMessage ?? ev.statusCode ?? '—'}</p>
+                          <p className="text-sm font-bold text-ink-900">{ev.statusLabel ?? ev.statusMessage ?? ev.statusCode ?? '—'}</p>
                           <p className="flex items-center gap-1 text-xs text-ink-500">
-                            <Clock size={11} /> {ev.date ?? '—'}{ev.statusCode ? ` · ${ev.statusCode}` : ''}
+                            <Clock size={11} /> {ev.date ?? '—'}{ev.statusCode ? ` · code ${ev.statusCode}` : ''}
                           </p>
                         </li>
                       ))}
