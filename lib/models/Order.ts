@@ -37,6 +37,18 @@ const OrderSchema = new Schema({
   attempts: { type: Number, default: 0 },
   exchange: { type: Boolean, default: false },
   privateNote: String,
+  // ── Delivery provider integration (Best Delivery, etc.) ───────────────────
+  delivery: {
+    provider: { type: String, default: null },          // e.g. 'best_delivery'
+    trackingNumber: { type: String, default: null },     // CodeBarre
+    statusCode: { type: String, default: null },
+    statusMessage: { type: String, default: null },
+    labelUrl: { type: String, default: null },           // printable label Url
+    failed: { type: Boolean, default: false },           // creation failed → allow retry
+    error: { type: String, default: null },              // ErrorsTxt
+    payload: { type: Schema.Types.Mixed, default: null }, // raw provider response
+    lastSyncAt: { type: String, default: null },         // ISO
+  },
   meta: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 

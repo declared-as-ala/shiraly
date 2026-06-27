@@ -42,7 +42,22 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
     shipping: d.shipping as number,
     assignedEmployeeId: d.assignedEmployeeId as string | null | undefined,
     assignedAt: d.assignedAt as string | null | undefined,
+    delivery: toDelivery(d.delivery as Record<string, unknown> | undefined),
     meta: (d.meta as Record<string, unknown>) ?? {},
+  };
+}
+
+function toDelivery(d?: Record<string, unknown>): OrderResponse['delivery'] {
+  return {
+    provider: (d?.provider as string | null) ?? null,
+    trackingNumber: (d?.trackingNumber as string | null) ?? null,
+    statusCode: (d?.statusCode as string | null) ?? null,
+    statusMessage: (d?.statusMessage as string | null) ?? null,
+    labelUrl: (d?.labelUrl as string | null) ?? null,
+    failed: Boolean(d?.failed),
+    error: (d?.error as string | null) ?? null,
+    payload: (d?.payload as Record<string, unknown> | null) ?? null,
+    lastSyncAt: (d?.lastSyncAt as string | null) ?? null,
   };
 }
 
@@ -137,6 +152,11 @@ export class MongoOrderService implements OrderService {
     if (patch.subtotal !== undefined) update.subtotal = patch.subtotal;
     if (patch.total !== undefined) update.total = patch.total;
     if (patch.attempts !== undefined) update.attempts = patch.attempts;
+    if (patch.delivery !== undefined) {
+      for (const [k, v] of Object.entries(patch.delivery)) {
+        update[`delivery.${k}`] = v;
+      }
+    }
     if (patch.meta !== undefined) update.meta = patch.meta;
     if (patch.customer) {
       update['customer.firstName'] = patch.customer.firstName;

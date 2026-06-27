@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import NumberField from './NumberField';
+import BestDeliveryPanel from './BestDeliveryPanel';
 import { Save, Trash2, Plus, History } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import type { OrderResponse, OrderStatus } from '@/types';
@@ -619,6 +620,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               </table>
             </div>
           </Card>
+
+          {isEdit && orderId && apiBase === '/api/admin' && (
+            <BestDeliveryPanel orderId={orderId} />
+          )}
         </div>
       )}
     </Drawer>

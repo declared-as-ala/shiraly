@@ -3,13 +3,15 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, ShoppingCart, Package, Tag, LogOut, UserCircle, Menu, X } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, Tag, LogOut, UserCircle, Menu, X, Truck, Receipt } from 'lucide-react';
 
 const items = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/commandes', label: 'Commandes', icon: ShoppingCart },
   { href: '/admin/produits', label: 'Produits', icon: Package },
   { href: '/admin/categories', label: 'Catégories', icon: Tag },
+  { href: '/admin/best-delivery/orders', label: 'Best Delivery', icon: Truck },
+  { href: '/admin/best-delivery/recettes', label: 'Recettes', icon: Receipt },
   { href: '/admin/profile', label: 'Profil', icon: UserCircle },
 ];
 

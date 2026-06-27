@@ -1,4 +1,4 @@
-import type { CheckoutPayload, OrderResponse, OrderStatus } from '@/types';
+import type { CheckoutPayload, OrderResponse, OrderStatus, OrderDelivery } from '@/types';
 
 export type OrderListQuery = {
   page?: number;
@@ -27,6 +27,7 @@ export type OrderUpdate = {
   subtotal?: number;
   total?: number;
   attempts?: number;
+  delivery?: Partial<OrderDelivery>;
   meta?: Record<string, unknown>;
   items?: {
     productId: string;

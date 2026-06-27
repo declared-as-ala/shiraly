@@ -46,6 +46,18 @@ export type OrderLineItem = {
   attributes?: { key: string; value: string }[];   // variation / bundle slot info shown in admin
 };
 
+export type OrderDelivery = {
+  provider: string | null;
+  trackingNumber: string | null;
+  statusCode: string | null;
+  statusMessage: string | null;
+  labelUrl: string | null;
+  failed: boolean;
+  error: string | null;
+  payload: Record<string, unknown> | null;
+  lastSyncAt: string | null;
+};
+
 export type OrderResponse = {
   id: string;
   number: string;
@@ -58,5 +70,6 @@ export type OrderResponse = {
   shipping: number;
   assignedEmployeeId?: string | null;
   assignedAt?: string | null;
+  delivery?: OrderDelivery;
   meta?: Record<string, unknown>;
 };

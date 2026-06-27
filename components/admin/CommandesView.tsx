@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, Edit, Trash2, Plus, Search, X } from 'lucide-react';
+import { Eye, Edit, Trash2, Plus, Search, X, RotateCcw } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
 import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
+import { ConfirmDialog } from './ui';
 import { formatPrice } from '@/lib/site-config';
 import type { OrderResponse } from '@/types';
 
@@ -329,22 +330,43 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     setSelected(checked ? new Set(filteredOrders.map((o) => o.id)) : new Set());
   }
 
-  async function remove(id: string) {
-    const orderObj = orders.find((o) => o.id === id);
-    const inTrash = orderObj?.status === 'trash';
-    const msg = inTrash 
-      ? `Supprimer définitivement la commande #${id} ? Cette action est irréversible.`
-      : `Mettre la commande #${id} à la corbeille ?`;
-    if (!confirm(msg)) return;
+  // Delete confirmation modal state
+  const [pendingDelete, setPendingDelete] = useState<OrderResponse | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function confirmRemove() {
+    const order = pendingDelete;
+    if (!order) return;
+    const inTrash = order.status === 'trash';
+    setDeleteBusy(true);
     const snapshot = orders;
-    setOrders((prev) => prev.filter((o) => o.id !== id));
-    const res = await fetch(`/api/admin/orders/${id}`, { method: 'DELETE' });
+    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    const res = await fetch(`/api/admin/orders/${order.id}`, { method: 'DELETE' });
+    setDeleteBusy(false);
+    setPendingDelete(null);
     if (!res.ok) {
       setOrders(snapshot);
       toast.error('Erreur de suppression');
       return;
     }
-    toast.success(inTrash ? `Commande #${id} supprimée définitivement` : `Commande #${id} mise à la corbeille`);
+    toast.success(inTrash ? 'Commande supprimée définitivement' : 'Commande mise à la corbeille');
+    startTransition(() => router.refresh());
+  }
+
+  async function restore(order: OrderResponse) {
+    const snapshot = orders;
+    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    const res = await fetch(`/api/admin/orders/${order.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'en-attente' }),
+    });
+    if (!res.ok) {
+      setOrders(snapshot);
+      toast.error('Erreur de restauration');
+      return;
+    }
+    toast.success('Commande restaurée');
     startTransition(() => router.refresh());
   }
 
@@ -604,9 +626,19 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                   <td className="px-4 py-3 text-right font-bold">{formatPrice(o.total)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <button onClick={() => openEdit(o.id)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title="Voir"><Eye size={16} /></button>
-                      <button onClick={() => openEdit(o.id)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title="Modifier"><Edit size={16} /></button>
-                      <button onClick={() => remove(o.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+                      {o.status === 'trash' ? (
+                        <>
+                          <button onClick={() => restore(o)} className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50" title="Restaurer"><RotateCcw size={16} /></button>
+                          <button onClick={() => openEdit(o.id)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title="Voir"><Eye size={16} /></button>
+                          <button onClick={() => setPendingDelete(o)} className="rounded-lg p-2 text-red-500 hover:bg-red-50" title="Supprimer définitivement"><Trash2 size={16} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => openEdit(o.id)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title="Voir"><Eye size={16} /></button>
+                          <button onClick={() => openEdit(o.id)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title="Modifier"><Edit size={16} /></button>
+                          <button onClick={() => setPendingDelete(o)} className="rounded-lg p-2 text-red-500 hover:bg-red-50" title="Mettre à la corbeille"><Trash2 size={16} /></button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -680,6 +712,21 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         onClose={() => setDrawerOpen(false)}
         orderId={editingId}
         onSaved={applySavedOrder}
+      />
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        danger
+        busy={deleteBusy}
+        title={pendingDelete?.status === 'trash' ? 'Supprimer définitivement ?' : 'Mettre à la corbeille ?'}
+        message={
+          pendingDelete?.status === 'trash'
+            ? `La commande #${pendingDelete?.number} sera supprimée définitivement. Cette action est irréversible.`
+            : `La commande #${pendingDelete?.number ?? ''} sera déplacée vers « Supprimées » et pourra être restaurée.`
+        }
+        confirmLabel={pendingDelete?.status === 'trash' ? 'Supprimer définitivement' : 'Mettre à la corbeille'}
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingDelete(null)}
       />
     </div>
   );
