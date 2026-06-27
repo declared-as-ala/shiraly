@@ -23,8 +23,10 @@ const OrderSchema = new Schema({
     phone: { type: String, required: true },
     phone2: String,
     email: String,
-    city: { type: String, required: true },
-    address: { type: String, required: true },
+    // Not required: abandoned-checkout drafts are saved with partial data
+    // (often before the customer fills city/address).
+    city: { type: String, default: '' },
+    address: { type: String, default: '' },
     note: String,
   },
   items: [LineItemSchema],
