@@ -287,8 +287,10 @@ function hasErrorsOf(xml: string): { hasErrors: boolean; errorsTxt: string | nul
 
 // ── SOAP core ──────────────────────────────────────────────────────────────────
 function buildEnvelope(operation: string, fields: Record<string, unknown>, namespace: string): string {
+  // Keep '' and 0 — the service's WSDL messages expect every declared element
+  // to be present (the official tester sends them all). Only skip undefined/null.
   const body = Object.entries(fields)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `<${k}>${escapeXml(v)}</${k}>`)
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>` +
@@ -359,6 +361,8 @@ export async function createPickup(input: CreatePickupInput): Promise<CreatePick
     };
   }
 
+  // Full parameter set in the exact order the official tester sends — the WSDL
+  // message declares all of these; the unused ones default to 0.
   const xml = await callSoap('CreatePickup', {
     nom: input.nom,
     gouvernerat: gouvernerat,
@@ -372,6 +376,24 @@ export async function createPickup(input: CreatePickupInput): Promise<CreatePick
     echange: input.echange,
     login: LOGIN,
     pwd: PASSWORD,
+    tracking_number: 0,
+    agence: 0,
+    agence_dst: 0,
+    date_add: 0,
+    date_pick: 0,
+    date_stat: 0,
+    nb_article: 0,
+    unlink: 0,
+    modif: 0,
+    id_runsheet: 0,
+    recu: 0,
+    id_recette: 0,
+    transmit: 0,
+    etat: 0,
+    id_frs: 0,
+    frs: 0,
+    paye: 0,
+    code_barre: 0,
   });
 
   const { hasErrors, errorsTxt } = hasErrorsOf(xml);
