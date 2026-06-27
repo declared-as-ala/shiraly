@@ -4,6 +4,7 @@ import { formatPrice } from '@/lib/site-config';
 import { getDictionary, type Lang } from '@/lib/i18n';
 import QuickAdd from '@/components/site/QuickAdd';
 import WishlistButton from '@/components/site/WishlistButton';
+import ProductCardMedia from '@/components/site/ProductCardMedia';
 
 export default function ProductCard({ product, lang = 'fr' }: { product: Product; lang?: Lang }) {
   const t = getDictionary(lang);
@@ -16,37 +17,14 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-brand-300 hover:shadow-card">
       <Link href={`/produit/${product.slug}`} className="flex flex-1 flex-col">
-        <div className="relative w-full overflow-hidden bg-sand-200">
-          <div style={{ paddingBottom: '125%' }} />
-          {img && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={img}
-              alt={product.images[0]?.alt || product.name}
-              className={`absolute inset-0 h-full w-full object-cover transition duration-500 ${hoverImg ? 'group-hover:opacity-0' : 'group-hover:scale-105'}`}
-              loading="lazy"
-            />
-          )}
-          {hoverImg && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={hoverImg}
-              alt={product.images[0]?.alt || product.name}
-              className="absolute inset-0 h-full w-full scale-105 object-cover opacity-0 transition duration-500 group-hover:scale-100 group-hover:opacity-100"
-              loading="lazy"
-            />
-          )}
-          {discount > 0 && (
-            <span className="absolute start-2 top-2 z-10 rounded-md bg-brand-600 px-2 py-0.5 text-[11px] font-black text-sand-50 shadow">
-              -{discount}%
-            </span>
-          )}
-          {!product.inStock && (
-            <span className="absolute start-2 bottom-2 z-10 rounded-md bg-ink-900/85 px-2 py-0.5 text-[11px] font-bold text-white">
-              {t.product.outOfStock}
-            </span>
-          )}
-        </div>
+        <ProductCardMedia
+          img={img}
+          hoverImg={hoverImg}
+          alt={product.images[0]?.alt || product.name}
+          discount={discount}
+          inStock={product.inStock}
+          outOfStockLabel={t.product.outOfStock}
+        />
 
         <div className="flex flex-1 flex-col p-3">
           <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-bold text-ink-900">{product.name}</h3>
