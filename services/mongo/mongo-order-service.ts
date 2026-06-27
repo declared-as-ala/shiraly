@@ -108,7 +108,12 @@ export class MongoOrderService implements OrderService {
   async list(query?: OrderListQuery): Promise<OrderListResult> {
     await connect();
     const filter: Record<string, unknown> = {};
-    if (query?.status && query.status !== 'any') filter.status = query.status;
+    if (query?.status && query.status !== 'any') {
+      // The admin passes comma-separated statuses (WooCommerce convention) for the
+      // "Normal" tab; match any of them with $in instead of an exact string compare.
+      const statuses = String(query.status).split(',').map((s) => s.trim()).filter(Boolean);
+      filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
+    }
     if (query?.search) {
       filter.$or = [
         { number: { $regex: query.search, $options: 'i' } },
