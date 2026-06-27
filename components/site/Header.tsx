@@ -56,7 +56,7 @@ export default function Header({ categories }: { categories: { name: string; slu
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-700 sm:h-10 sm:w-10">
               <Image src="/star-logo.svg" alt="" width={40} height={40} priority unoptimized className="h-5 w-5 sm:h-6 sm:w-6" />
             </span>
-            <span className="font-heading text-lg font-black tracking-tight text-ink-900 sm:text-2xl">{t.common.brandName}</span>
+            <span className="font-heading text-xl font-semibold uppercase tracking-[0.18em] text-ink-900 sm:text-2xl">{t.common.brandName}</span>
           </Link>
 
           <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
