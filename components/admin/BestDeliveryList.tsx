@@ -5,9 +5,8 @@ import { ChevronLeft, ChevronRight, RefreshCw, Truck, AlertCircle, Stethoscope, 
 import { PageHeader, EmptyState } from '@/components/admin/ui';
 
 type Diagnostics = {
-  wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
-  targetNamespace: string | null; operations: string[];
-  hasGetOrder: boolean; hasGetRecette: boolean; error?: string;
+  proxyUrl: string; wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
+  sampleRequest?: string | null; sampleResponse?: string | null; error?: string;
 };
 
 type ApiResult = {
@@ -82,21 +81,28 @@ export default function BestDeliveryList({
           <summary className="flex cursor-pointer items-center gap-2 text-sm font-bold text-ink-900">
             <Stethoscope size={15} className="text-brand-500" /> Diagnostic Best Delivery
             <span className={`ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${diag.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-              {diag.ok ? 'WSDL chargé' : 'WSDL inaccessible'}
+              {diag.ok ? 'Connecté' : 'Erreur'}
             </span>
           </summary>
           <div className="mt-3 space-y-2 text-sm text-ink-700">
+            <p><span className="font-bold">Proxy :</span> <span className="break-all font-mono text-xs">{diag.proxyUrl}</span></p>
             <p><span className="font-bold">WSDL :</span> <span className="break-all font-mono text-xs">{diag.wsdlUrl}</span></p>
-            <p><span className="font-bold">Namespace :</span> <span className="font-mono text-xs">{diag.targetNamespace ?? '—'}</span></p>
             <p><span className="font-bold">Login :</span> {diag.login ?? '—'} <span className="text-ink-500">(mot de passe masqué)</span></p>
-            <p className="flex items-center gap-2"><span className="font-bold">GetOrder :</span> {diag.hasGetOrder ? <Check size={15} className="text-emerald-600" /> : <X size={15} className="text-red-500" />}</p>
-            <p className="flex items-center gap-2"><span className="font-bold">GetRecette :</span> {diag.hasGetRecette ? <Check size={15} className="text-emerald-600" /> : <X size={15} className="text-red-500" />}</p>
-            {diag.operations.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {diag.operations.map((op) => <span key={op} className="rounded-md bg-sand-200 px-2 py-0.5 font-mono text-[11px] text-ink-900">{op}</span>)}
+            <p className="flex items-center gap-2"><span className="font-bold">Configuré :</span> {diag.configured ? <Check size={15} className="text-emerald-600" /> : <X size={15} className="text-red-500" />}</p>
+            {diag.error && <p className="text-red-600">{diag.error}</p>}
+
+            {diag.sampleRequest && (
+              <div className="pt-1">
+                <p className="font-bold">Requête SOAP envoyée (exemple) :</p>
+                <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-ink-900 p-3 text-[11px] leading-snug text-sand-100">{diag.sampleRequest}</pre>
               </div>
             )}
-            {diag.error && <p className="text-red-600">{diag.error}</p>}
+            {diag.sampleResponse && (
+              <div className="pt-1">
+                <p className="font-bold">Réponse SOAP reçue (exemple) :</p>
+                <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-ink-900 p-3 text-[11px] leading-snug text-sand-100">{diag.sampleResponse}</pre>
+              </div>
+            )}
           </div>
         </details>
       )}

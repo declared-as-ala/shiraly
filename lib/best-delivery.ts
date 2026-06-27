@@ -1,45 +1,40 @@
 import 'server-only';
-import { createClientAsync } from 'soap';
 
 /**
- * Best Delivery (best-delivery.net) SOAP integration — backend only.
+ * Best Delivery integration — backend only.
  *
- * Uses the WSDL-driven `soap` client (same behaviour as Best Delivery's official
- * "tester with proxy"): it reads the WSDL and builds correct envelopes
- * automatically (namespace, parameter order, rpc/document style, encoding).
+ * The Best Delivery SOAP server dispatches by un-namespaced procedure elements
+ * whose names differ from the documented method names (e.g. CreatePickup → the
+ * SOAP element <pickup>). Their official integration uses a JSON proxy that maps
+ * each documented method to the correct SOAP request and returns clean JSON:
  *
- * Docs: https://doc.best-delivery.net/   WSDL: serviceShipments.php?wsdl
+ *   POST { method, params: {...login,pwd...}, soap_url }
+ *   → { success, data, request_xml, response_xml }
+ *
+ * We call that proxy directly — it handles every method's mapping for us.
+ *
+ * Docs: https://doc.best-delivery.net/
  */
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const WSDL_URL = process.env.BEST_DELIVERY_WSDL_URL ?? 'https://api.best-delivery.net/serviceShipments.php?wsdl';
+const PROXY_URL = process.env.BEST_DELIVERY_PROXY_URL ?? 'https://doc.best-delivery.net/soap-proxy.php';
 const LOGIN = process.env.BEST_DELIVERY_LOGIN ?? '';
 const PASSWORD = process.env.BEST_DELIVERY_PASSWORD ?? '';
 const TIMEOUT_MS = Number(process.env.BEST_DELIVERY_TIMEOUT_MS) || 20000;
 
 export function isConfigured(): boolean {
-  return Boolean(LOGIN && PASSWORD && WSDL_URL);
+  return Boolean(LOGIN && PASSWORD && PROXY_URL && WSDL_URL);
 }
 
-type SoapClient = Awaited<ReturnType<typeof createClientAsync>>;
-
-let clientPromise: Promise<SoapClient> | null = null;
-
-/** Lazily create and cache the SOAP client built from the live WSDL. */
-async function getClient(): Promise<SoapClient> {
-  if (!isConfigured()) throw new Error('Best Delivery non configuré (BEST_DELIVERY_LOGIN/PASSWORD/WSDL_URL).');
-  if (!clientPromise) {
-    clientPromise = createClientAsync(WSDL_URL, { wsdl_options: { timeout: TIMEOUT_MS } as Record<string, unknown> })
-      .catch((e) => { clientPromise = null; throw e; });
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' });
+  } finally {
+    clearTimeout(timer);
   }
-  return clientPromise;
-}
-
-function withTimeout<T>(p: Promise<T>, ms = TIMEOUT_MS, label = 'Best Delivery'): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label}: délai dépassé (${ms}ms)`)), ms)),
-  ]);
 }
 
 // ── Tunisia governorates (validation) ────────────────────────────────────────
@@ -69,26 +64,13 @@ export function statusLabel(code: string | null | undefined): string | null {
   return BEST_DELIVERY_STATUS[String(code).trim()] ?? null;
 }
 
-export class OperationNotAvailableError extends Error {
-  constructor(op: string) {
-    super(`L'opération « ${op} » est documentée mais non exposée par le WSDL actuel. Contactez Best Delivery ou utilisez leur endpoint proxy.`);
-    this.name = 'OperationNotAvailableError';
-  }
-}
-
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 export type CreatePickupInput = {
   nom: string; gouvernerat: string; ville: string; adresse: string;
   tel: string; tel2?: string; designation: string; prix: number; msg?: string; echange: 0 | 1;
 };
-export type CreatePickupResult = {
-  hasErrors: boolean; errorsTxt: string | null;
-  codeBarre: string | null; url: string | null; raw: unknown;
-};
-export type TrackStatusResult = {
-  hasErrors: boolean; errorsTxt: string | null;
-  trackingNumber: string | null; statusCode: string | null; statusMessage: string | null; statusLabel: string | null; raw: unknown;
-};
+export type CreatePickupResult = { hasErrors: boolean; errorsTxt: string | null; codeBarre: string | null; url: string | null; raw: unknown };
+export type TrackStatusResult = { hasErrors: boolean; errorsTxt: string | null; trackingNumber: string | null; statusCode: string | null; statusMessage: string | null; statusLabel: string | null; raw: unknown };
 export type TrackEvent = { date: string | null; statusCode: string | null; statusMessage: string | null; statusLabel: string | null };
 export type TrackHistoryResult = { hasErrors: boolean; errorsTxt: string | null; events: TrackEvent[]; raw: unknown };
 export type Paginated<T> = { hasErrors: boolean; errorsTxt: string | null; totalPages: number; currentPage: number; items: T[]; raw: unknown };
@@ -118,7 +100,7 @@ export function validatePickup(input: Partial<CreatePickupInput>): { ok: boolean
   return { ok: errors.length === 0, errors, gouvernerat: canonicalGov };
 }
 
-// ── Response helpers — tolerant of SOAP output nesting (e.g. { return: {...} }) ──
+// ── Response helpers (operate on the proxy's JSON `data`) ───────────────────────
 function deepFind(obj: unknown, key: string): string | null {
   const target = key.toLowerCase();
   const stack: unknown[] = [obj];
@@ -135,7 +117,6 @@ function deepFind(obj: unknown, key: string): string | null {
 }
 function deepFindArray(obj: unknown, keys: string[]): Record<string, unknown>[] {
   const targets = keys.map((k) => k.toLowerCase());
-  // 1) prefer an array whose property name matches
   const s1: unknown[] = [obj];
   while (s1.length) {
     const cur = s1.pop();
@@ -143,13 +124,12 @@ function deepFindArray(obj: unknown, keys: string[]): Record<string, unknown>[] 
       for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
         if (targets.includes(k.toLowerCase())) {
           if (Array.isArray(v)) return v as Record<string, unknown>[];
-          if (v && typeof v === 'object') return [v as Record<string, unknown>]; // single element not arrayified
+          if (v && typeof v === 'object') return [v as Record<string, unknown>];
         }
         if (v && typeof v === 'object') s1.push(v);
       }
     }
   }
-  // 2) fallback: any array of objects
   const s2: unknown[] = [obj];
   while (s2.length) {
     const cur = s2.pop();
@@ -170,74 +150,37 @@ function flatten(obj: Record<string, unknown>): Record<string, string | null> {
   }
   return out;
 }
-function hasErrorsOf(res: unknown): { hasErrors: boolean; errorsTxt: string | null } {
-  const he = deepFind(res, 'HasErrors');
-  return { hasErrors: he === '1' || he?.toLowerCase?.() === 'true', errorsTxt: deepFind(res, 'ErrorsTxt') };
-}
-function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
-  return { ...args, pwd: '***', password: args.password ? '***' : undefined };
+function hasErrorsOf(data: unknown): { hasErrors: boolean; errorsTxt: string | null } {
+  const he = deepFind(data, 'HasErrors');
+  return { hasErrors: he === '1' || he?.toLowerCase?.() === 'true', errorsTxt: deepFind(data, 'ErrorsTxt') };
 }
 
-// ── SOAP invocation ───────────────────────────────────────────────────────────
-/** Find the promisified client method for an operation (case-insensitive). */
-function resolveMethod(client: SoapClient, op: string): ((args: unknown) => Promise<unknown[]>) | null {
-  const c = client as unknown as Record<string, unknown>;
-  const wanted = `${op}async`.toLowerCase();
-  for (const key of Object.keys(c)) {
-    if (key.toLowerCase() === wanted && typeof c[key] === 'function') {
-      return (c[key] as (args: unknown) => Promise<unknown[]>).bind(client);
-    }
+// ── Proxy invocation ───────────────────────────────────────────────────────────
+type ProxyResponse = { success?: boolean; data?: unknown; error?: string; request_xml?: string; response_xml?: string };
+
+async function callProxy(method: string, params: Record<string, unknown>): Promise<ProxyResponse> {
+  if (!isConfigured()) throw new Error('Best Delivery non configuré (BEST_DELIVERY_LOGIN/PASSWORD).');
+  const payload = { method, params: { ...params, login: LOGIN, pwd: PASSWORD }, soap_url: WSDL_URL };
+  console.info(`[best-delivery] → ${method}`, { ...params, login: LOGIN, pwd: '***' });
+
+  const res = await fetchWithTimeout(PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const json = (await res.json().catch(() => ({}))) as ProxyResponse;
+  console.info(`[best-delivery] ← ${method} (${res.status})`, JSON.stringify(json.data ?? json.error)?.slice(0, 3000));
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.error || `Best Delivery proxy error (HTTP ${res.status})`);
   }
-  return null;
-}
-
-async function callSoap(op: string, args: Record<string, unknown>): Promise<unknown> {
-  const client = await getClient();
-  const method = resolveMethod(client, op);
-  if (!method) throw new OperationNotAvailableError(op);
-
-  console.info(`[best-delivery] → ${op}`, redactArgs(args));
-  const [result] = await withTimeout(method(args), TIMEOUT_MS, op);
-  console.info(`[best-delivery] ← ${op}`, JSON.stringify(result)?.slice(0, 4000));
-  return result;
-}
-
-/** Whether an operation exists on the live WSDL. */
-export async function operationExists(op: string): Promise<boolean> {
-  try {
-    const client = await getClient();
-    return resolveMethod(client, op) !== null;
-  } catch {
-    return false;
+  // The proxy can return HTTP 200 + success:true while `data` is actually a
+  // SOAP-ERROR / fault string — treat that as a real failure.
+  if (typeof json.data === 'string' && /soap-?error|fault|error/i.test(json.data)) {
+    throw new Error(json.data);
   }
-}
-
-// ── Diagnostics (admin debug; never returns the password) ──────────────────────
-export async function describe(): Promise<{ wsdlUrl: string; targetNamespace: string | null; operations: string[] }> {
-  const client = await getClient();
-  const desc = client.describe() as Record<string, unknown>;
-  const ops = new Set<string>();
-  for (const service of Object.values(desc)) {
-    for (const port of Object.values(service as Record<string, unknown>)) {
-      for (const opName of Object.keys(port as Record<string, unknown>)) ops.add(opName);
-    }
-  }
-  const tns = (client as unknown as { wsdl?: { definitions?: { $targetNamespace?: string } } })?.wsdl?.definitions?.$targetNamespace ?? null;
-  return { wsdlUrl: WSDL_URL, targetNamespace: tns, operations: [...ops] };
-}
-
-export async function getDiagnostics(): Promise<{
-  wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
-  targetNamespace: string | null; operations: string[]; hasGetOrder: boolean; hasGetRecette: boolean; error?: string;
-}> {
-  const base = { wsdlUrl: WSDL_URL, login: LOGIN || null, configured: isConfigured() };
-  try {
-    const { operations, targetNamespace } = await describe();
-    const has = (n: string) => operations.some((o) => o.toLowerCase() === n.toLowerCase());
-    return { ...base, ok: true, targetNamespace, operations, hasGetOrder: has('GetOrder'), hasGetRecette: has('GetRecette') };
-  } catch (e) {
-    return { ...base, ok: false, targetNamespace: null, operations: [], hasGetOrder: false, hasGetRecette: false, error: e instanceof Error ? e.message : 'Erreur WSDL' };
-  }
+  return json;
 }
 
 // ── Operations ──────────────────────────────────────────────────────────────────
@@ -249,44 +192,65 @@ export async function createPickup(input: CreatePickupInput): Promise<CreatePick
     return { hasErrors: true, errorsTxt: errors.map((e) => e.message).join(' '), codeBarre: null, url: null, raw: { validation: errors } };
   }
 
-  const res = await callSoap('CreatePickup', {
-    login: LOGIN, pwd: PASSWORD,
-    nom: input.nom, gouvernerat, ville: input.ville, adresse: input.adresse,
-    tel: input.tel, tel2: input.tel2 ?? '', designation: input.designation,
-    prix: Number(input.prix), msg: input.msg ?? '', echange: input.echange,
+  // The proxy's SOAP encoder requires every field of the `pickup` struct to be
+  // present (matches the official tester's request). Unused fields default to 0.
+  const { data } = await callProxy('CreatePickup', {
+    code_barre: 0,
+    frs: 0,
+    id_frs: 0,
+    agence: 0,
+    date_add: 0,
+    date_pick: 0,
+    prix: Number(input.prix),
+    nom: input.nom,
+    gouvernerat,
+    ville: input.ville,
+    adresse: input.adresse,
+    tel: input.tel,
+    tel2: input.tel2 ?? '',
+    designation: input.designation,
+    nb_article: 0,
+    msg: input.msg ?? '',
+    etat: 0,
+    paye: 0,
+    date_stat: 0,
+    agence_dest: 0,
+    transmit: 0,
+    recu: 0,
+    id_recette: 0,
+    unlink: 0,
+    modif: 0,
+    tracking_number: 0,
+    id_runsheet: 0,
+    echange: input.echange,
   });
 
-  const { hasErrors, errorsTxt } = hasErrorsOf(res);
-  return {
-    hasErrors, errorsTxt,
-    codeBarre: deepFind(res, 'CodeBarre'),
-    url: deepFind(res, 'Url'),
-    raw: res,
-  };
+  const { hasErrors, errorsTxt } = hasErrorsOf(data);
+  return { hasErrors, errorsTxt, codeBarre: deepFind(data, 'CodeBarre'), url: deepFind(data, 'Url'), raw: data };
 }
 
 /** TrackShipmentStatus — current status code + message for a tracking number. */
 export async function trackShipmentStatus(trackingNumber: string): Promise<TrackStatusResult> {
-  const res = await callSoap('TrackShipmentStatus', { login: LOGIN, pwd: PASSWORD, tracking_number: trackingNumber });
-  const { hasErrors, errorsTxt } = hasErrorsOf(res);
-  const statusCode = deepFind(res, 'status');
+  const { data } = await callProxy('TrackShipmentStatus', { tracking_number: trackingNumber });
+  const { hasErrors, errorsTxt } = hasErrorsOf(data);
+  const statusCode = deepFind(data, 'status');
   return {
     hasErrors, errorsTxt,
-    trackingNumber: deepFind(res, 'tracking_number') ?? trackingNumber,
+    trackingNumber: deepFind(data, 'tracking_number') ?? trackingNumber,
     statusCode,
-    statusMessage: deepFind(res, 'message'),
+    statusMessage: deepFind(data, 'message'),
     statusLabel: statusLabel(statusCode),
-    raw: res,
+    raw: data,
   };
 }
 
 /** TrackShipment — full status history for a tracking number. */
 export async function trackShipment(trackingNumber: string): Promise<TrackHistoryResult> {
-  const res = await callSoap('TrackShipment', { login: LOGIN, pwd: PASSWORD, tracking_number: trackingNumber });
-  const { hasErrors, errorsTxt } = hasErrorsOf(res);
-  const rows = deepFindArray(res, ['status', 'history', 'item']);
+  const { data } = await callProxy('TrackShipment', { tracking_number: trackingNumber });
+  const { hasErrors, errorsTxt } = hasErrorsOf(data);
+  const rows = deepFindArray(data, ['status', 'history', 'item']);
   const events: TrackEvent[] = rows.map((r) => {
-    const code = (deepFind(r, 'status') ?? deepFind(r, 'code') ?? deepFind(r, 'etat'));
+    const code = deepFind(r, 'status') ?? deepFind(r, 'code') ?? deepFind(r, 'etat');
     return {
       date: deepFind(r, 'date') ?? deepFind(r, 'datetime'),
       statusCode: code,
@@ -294,37 +258,61 @@ export async function trackShipment(trackingNumber: string): Promise<TrackHistor
       statusLabel: statusLabel(code),
     };
   }).filter((e) => e.date || e.statusCode || e.statusMessage);
-  return { hasErrors, errorsTxt, events, raw: res };
+  return { hasErrors, errorsTxt, events, raw: data };
 }
 
-/** GetOrder — paginated list of Best Delivery orders (guarded: documented but often not exposed). */
+/** GetOrder — paginated list of Best Delivery orders. */
 export async function getOrder(page = 1, ofset = 20): Promise<Paginated<Record<string, string | null>>> {
-  if (!(await operationExists('GetOrder'))) {
-    return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetOrder').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
+  try {
+    const { data } = await callProxy('GetOrder', { page, ofset });
+    const { hasErrors, errorsTxt } = hasErrorsOf(data);
+    return {
+      hasErrors, errorsTxt,
+      totalPages: Number(deepFind(data, 'total_pages')) || 1,
+      currentPage: Number(deepFind(data, 'current_page')) || page,
+      items: deepFindArray(data, ['message', 'orders', 'item']).map(flatten),
+      raw: data,
+    };
+  } catch (e) {
+    return { hasErrors: true, errorsTxt: e instanceof Error ? e.message : 'Erreur', totalPages: 1, currentPage: page, items: [], raw: null };
   }
-  const res = await callSoap('GetOrder', { login: LOGIN, pwd: PASSWORD, page, ofset });
-  const { hasErrors, errorsTxt } = hasErrorsOf(res);
-  return {
-    hasErrors, errorsTxt,
-    totalPages: Number(deepFind(res, 'total_pages')) || 1,
-    currentPage: Number(deepFind(res, 'current_page')) || page,
-    items: deepFindArray(res, ['message', 'orders', 'item']).map(flatten),
-    raw: res,
-  };
 }
 
-/** GetRecette — paginated list of Best Delivery recettes (guarded: documented but often not exposed). */
+/** GetRecette — paginated list of Best Delivery recettes (payments). */
 export async function getRecette(page = 1, ofset = 20): Promise<Paginated<Record<string, string | null>>> {
-  if (!(await operationExists('GetRecette'))) {
-    return { hasErrors: true, errorsTxt: new OperationNotAvailableError('GetRecette').message, totalPages: 1, currentPage: page, items: [], raw: { unavailable: true } };
+  try {
+    const { data } = await callProxy('GetRecette', { page, ofset });
+    const { hasErrors, errorsTxt } = hasErrorsOf(data);
+    return {
+      hasErrors, errorsTxt,
+      totalPages: Number(deepFind(data, 'total_pages')) || 1,
+      currentPage: Number(deepFind(data, 'current_page')) || page,
+      items: deepFindArray(data, ['message', 'recettes', 'item']).map(flatten),
+      raw: data,
+    };
+  } catch (e) {
+    return { hasErrors: true, errorsTxt: e instanceof Error ? e.message : 'Erreur', totalPages: 1, currentPage: page, items: [], raw: null };
   }
-  const res = await callSoap('GetRecette', { login: LOGIN, pwd: PASSWORD, page, ofset });
-  const { hasErrors, errorsTxt } = hasErrorsOf(res);
-  return {
-    hasErrors, errorsTxt,
-    totalPages: Number(deepFind(res, 'total_pages')) || 1,
-    currentPage: Number(deepFind(res, 'current_page')) || page,
-    items: deepFindArray(res, ['message', 'recettes', 'item']).map(flatten),
-    raw: res,
-  };
+}
+
+// ── Diagnostics (admin debug; never returns the password) ──────────────────────
+function redactXml(xml: string | null | undefined): string | null {
+  if (!xml) return null;
+  let out = xml.replace(/(<(?:\w+:)?(?:pwd|password)>)[\s\S]*?(<\/(?:\w+:)?(?:pwd|password)>)/gi, '$1***$2');
+  if (PASSWORD) out = out.split(PASSWORD).join('***');
+  return out;
+}
+
+export async function getDiagnostics(): Promise<{
+  proxyUrl: string; wsdlUrl: string; login: string | null; configured: boolean; ok: boolean;
+  sampleRequest?: string | null; sampleResponse?: string | null; error?: string;
+}> {
+  const base = { proxyUrl: PROXY_URL, wsdlUrl: WSDL_URL, login: LOGIN || null, configured: isConfigured() };
+  try {
+    // Harmless probe (invalid tracking) to capture the proxy's request/response XML.
+    const probe = await callProxy('TrackShipmentStatus', { tracking_number: '0' });
+    return { ...base, ok: true, sampleRequest: redactXml(probe.request_xml), sampleResponse: redactXml(probe.response_xml) };
+  } catch (e) {
+    return { ...base, ok: false, error: e instanceof Error ? e.message : 'Erreur' };
+  }
 }

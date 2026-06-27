@@ -124,15 +124,22 @@ export default function BestDeliveryPanel({ orderId }: { orderId: string }) {
                   <Info label="Dernière synchro" value={delivery?.lastSyncAt ? new Date(delivery.lastSyncAt).toLocaleString('fr-FR') : '—'} />
                 </div>
 
+                {delivery?.labelUrl && (
+                  <p className="rounded-lg bg-sand-100 px-3 py-2 text-xs text-ink-500">
+                    Le bon de livraison s&apos;ouvre sur best-delivery.net. Connectez-vous à votre compte expéditeur dans le même navigateur, puis imprimez (Ctrl/Cmd + P).
+                  </p>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   {delivery?.labelUrl && (
                     <a
                       href={delivery.labelUrl}
                       target="_blank"
                       rel="noopener"
+                      title="Ouvre le bon de livraison sur best-delivery.net (connexion à votre compte expéditeur requise)"
                       className="inline-flex items-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2 text-sm font-bold text-ink-900 hover:bg-ink-100"
                     >
-                      <Printer size={15} /> Imprimer l&apos;étiquette
+                      <Printer size={15} /> Bon de livraison
                     </a>
                   )}
                   <button

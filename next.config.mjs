@@ -12,9 +12,6 @@ const nextConfig = {
   },
   experimental: {
     serverActions: { allowedOrigins: ['*'] },
-    // `soap` does dynamic requires (WSDL/templates) — keep it external so it's
-    // loaded at runtime from node_modules instead of being bundled.
-    serverComponentsExternalPackages: ['soap'],
   },
 };
 export default nextConfig;
