@@ -37,10 +37,13 @@ export type OrderUpdate = {
     bundleName?: string;
     bundleSlot?: number;
   }[];
+  promoCode?: string | null;
+  discountAmount?: number;
+  finalTotal?: number;
 };
 
 export interface OrderService {
-  create(payload: CheckoutPayload): Promise<OrderResponse>;
+  create(payload: CheckoutPayload, promoCode?: string | null, discountAmount?: number): Promise<OrderResponse>;
   getById(id: string): Promise<OrderResponse | null>;
   list(query?: OrderListQuery): Promise<OrderListResult>;
   update(id: string, patch: OrderUpdate): Promise<OrderResponse>;

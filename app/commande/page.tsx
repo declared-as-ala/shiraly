@@ -4,16 +4,19 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
-import { useCart } from '@/lib/cart';
+import { useCart, selectDiscount, selectSubtotal } from '@/lib/cart';
 import { SITE, formatPrice } from '@/lib/site-config';
 import type { CheckoutPayload } from '@/types';
 import { useLanguage } from '@/components/site/LanguageProvider';
+import PromoCodeInput from '@/components/site/PromoCodeInput';
 
 export default function CheckoutPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
+  const appliedPromo = useCart((s) => s.appliedPromo);
   const total = useMemo(() => items.reduce((s, x) => s + x.price * x.qty, 0), [items]);
+  const discount = useMemo(() => selectDiscount(appliedPromo), [appliedPromo]);
   const { t } = useLanguage();
 
   const [submitting, setSubmitting] = useState(false);
@@ -36,19 +39,17 @@ export default function CheckoutPage() {
   });
 
   const shipping = 8;
-  const grand = total + shipping;
+  const grand = Math.max(0, total + shipping - discount);
 
   const draftOrderIdRef = useRef<string | undefined>(undefined);
   const isSubmittedRef = useRef<boolean>(false);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debounced effect to automatically save checkout drafts in background (abandoned checkout recovery)
   useEffect(() => {
     if (!items.length || isSubmittedRef.current) return;
     const name = form.firstName.trim();
     const ph = form.phone.trim().replace(/\s/g, '');
-    
-    // Auto-save only when name is entered and phone has at least 8 digits (valid Tunisian number)
+
     if (name.length < 2 || ph.length < 8) return;
 
     const delayDebounceFn = setTimeout(async () => {
@@ -61,7 +62,8 @@ export default function CheckoutPage() {
           shipping,
           paymentMethod: 'cod',
           source: 'storefront-next',
-          status: 'checkout-draft', // Mark as checkout-draft (Abandoned) in WooCommerce
+          status: 'checkout-draft',
+          promoCode: appliedPromo?.code,
         };
 
         const res = await fetch('/api/orders', {
@@ -76,20 +78,19 @@ export default function CheckoutPage() {
       } catch (err) {
         console.error('Failed to auto-save abandoned checkout draft:', err);
       }
-    }, 1500); // 1.5 seconds debounce
+    }, 1500);
 
     debounceTimeoutRef.current = delayDebounceFn;
 
     return () => {
       if (delayDebounceFn) clearTimeout(delayDebounceFn);
     };
-  }, [form, items, shipping]);
+  }, [form, items, shipping, appliedPromo]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!items.length) return;
 
-    // Prevent any pending or future debounced auto-saves from executing
     isSubmittedRef.current = true;
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
@@ -97,7 +98,7 @@ export default function CheckoutPage() {
 
     setSubmitting(true);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         orderId: draftOrderIdRef.current,
         customer: { ...form, lastName: '' },
         items,
@@ -106,6 +107,10 @@ export default function CheckoutPage() {
         source: 'storefront-next',
         status: 'en-attente',
       };
+      if (appliedPromo) {
+        payload.promoCode = appliedPromo.code;
+        payload.discountAmount = discount;
+      }
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,7 +122,6 @@ export default function CheckoutPage() {
       const num = data.number || data.id;
       router.push(`/merci?id=${data.id ?? ''}&n=${encodeURIComponent(num ?? '')}`);
     } catch (err) {
-      // Re-enable in case of submission failure
       isSubmittedRef.current = false;
       const msg = err instanceof Error ? err.message : t.checkout.unknownError;
       alert(`${t.checkout.alertPrefix}: ${msg}`);
@@ -203,6 +207,9 @@ export default function CheckoutPage() {
                 />
               </label>
             </div>
+            <div className="border-t border-ink-200 pt-4">
+              <PromoCodeInput />
+            </div>
           </div>
 
           <aside className="card h-fit p-6">
@@ -230,6 +237,12 @@ export default function CheckoutPage() {
             </ul>
             <div className="mt-4 space-y-2 border-t border-ink-200 pt-4 text-sm">
               <div className="flex justify-between"><span>{t.cart.subtotal}</span><span>{formatPrice(total)}</span></div>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>{t.cart.promoDiscount}</span>
+                  <span>-{formatPrice(discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between"><span>{t.cart.shipping}</span><span>{formatPrice(shipping)}</span></div>
               <div className="mt-2 flex justify-between border-t border-ink-200 pt-2 text-lg font-black">
                 <span>{t.cart.total}</span>

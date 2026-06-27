@@ -1,20 +1,22 @@
 'use client';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CartItem } from '@/types';
+import type { CartItem, PromoAppliedState } from '@/types';
 
 type AddInput = Omit<CartItem, 'lineId'> & { lineId?: string };
 
 type CartState = {
   items: CartItem[];
+  appliedPromo: PromoAppliedState | null;
   add: (item: AddInput) => void;
   setQty: (lineId: string, qty: number) => void;
   remove: (lineId: string) => void;
   clear: () => void;
+  applyPromo: (promo: PromoAppliedState) => void;
+  removePromo: () => void;
 };
 
 function newId(): string {
-  // RFC 4122-ish; falls back to Math.random when crypto is unavailable.
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
   return `c_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -30,21 +32,23 @@ export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      appliedPromo: null,
       add: (input) => {
         const items = get().items.slice();
-        // For non-bundled lines: collapse identical lines (same product + variation) into one.
         const i = items.findIndex((x) => sameLine(x, input));
         if (i >= 0 && input.bundleSlot === undefined) {
           items[i] = { ...items[i], qty: items[i].qty + input.qty };
         } else {
           items.push({ ...input, lineId: input.lineId ?? newId() });
         }
-        set({ items });
+        set({ items, appliedPromo: null });
       },
       setQty: (lineId, qty) =>
-        set({ items: get().items.map((x) => (x.lineId === lineId ? { ...x, qty: Math.max(1, qty) } : x)) }),
-      remove: (lineId) => set({ items: get().items.filter((x) => x.lineId !== lineId) }),
-      clear: () => set({ items: [] }),
+        set({ items: get().items.map((x) => (x.lineId === lineId ? { ...x, qty: Math.max(1, qty) } : x)), appliedPromo: null }),
+      remove: (lineId) => set({ items: get().items.filter((x) => x.lineId !== lineId), appliedPromo: null }),
+      clear: () => set({ items: [], appliedPromo: null }),
+      applyPromo: (promo) => set({ appliedPromo: promo }),
+      removePromo: () => set({ appliedPromo: null }),
     }),
     { name: 'shiraly-cart' },
   ),
@@ -55,4 +59,12 @@ export function selectSubtotal(items: CartItem[]): number {
 }
 export function selectCount(items: CartItem[]): number {
   return items.reduce((s, x) => s + x.qty, 0);
+}
+export function selectDiscount(appliedPromo: PromoAppliedState | null): number {
+  return appliedPromo?.discountAmount ?? 0;
+}
+export function selectTotal(items: CartItem[], shipping: number, appliedPromo: PromoAppliedState | null): number {
+  const subtotal = selectSubtotal(items);
+  const discount = selectDiscount(appliedPromo);
+  return Math.max(0, subtotal + shipping - discount);
 }

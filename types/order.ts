@@ -22,6 +22,8 @@ export type CheckoutPayload = {
   source?: string;      // utm/source for analytics
   status?: string;      // optional status
   attempts?: number;    // number of call attempts
+  promoCode?: string;
+  discountAmount?: number;
 };
 
 // Standard WooCommerce statuses + any custom slug (e.g. Tunisian COD plugins:
@@ -71,5 +73,8 @@ export type OrderResponse = {
   assignedEmployeeId?: string | null;
   assignedAt?: string | null;
   delivery?: OrderDelivery;
+  promoCode?: string | null;
+  discountAmount?: number;
+  finalTotal?: number | null;
   meta?: Record<string, unknown>;
 };

@@ -51,6 +51,9 @@ const OrderSchema = new Schema({
     payload: { type: Schema.Types.Mixed, default: null }, // raw provider response
     lastSyncAt: { type: String, default: null },         // ISO
   },
+  promoCode: { type: String, default: null },
+  discountAmount: { type: Number, default: 0 },
+  finalTotal: { type: Number, default: null },
   meta: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 

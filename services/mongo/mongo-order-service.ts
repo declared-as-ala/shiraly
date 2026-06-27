@@ -7,8 +7,6 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
   const d = doc as Record<string, unknown>;
   const customer = d.customer as Record<string, unknown>;
   const items = (d.items as Array<Record<string, unknown>>) ?? [];
-  // Fall back to (line items + shipping) when the stored total is missing/0
-  // (e.g. orders created from checkout drafts that never persisted a total).
   const shippingVal = Number(d.shipping) || 0;
   const itemsTotal = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
   const storedTotal = Number(d.total) || 0;
@@ -19,7 +17,7 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
     status: (d.status as OrderStatus) ?? 'pending',
     currency: (d.currency as string) ?? 'TND',
     total,
-    createdAt: (d.createdAt as string) ?? (d.createdAt as string) ?? new Date().toISOString(),
+    createdAt: (d.createdAt as string) ?? new Date().toISOString(),
     customer: {
       firstName: customer.firstName as string,
       lastName: customer.lastName as string | undefined,
@@ -43,6 +41,9 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
     assignedEmployeeId: d.assignedEmployeeId as string | null | undefined,
     assignedAt: d.assignedAt as string | null | undefined,
     delivery: toDelivery(d.delivery as Record<string, unknown> | undefined),
+    promoCode: d.promoCode as string | null | undefined,
+    discountAmount: (d.discountAmount as number) ?? 0,
+    finalTotal: d.finalTotal as number | null | undefined,
     meta: (d.meta as Record<string, unknown>) ?? {},
   };
 }
@@ -68,8 +69,11 @@ function generateNumber(): string {
 }
 
 export class MongoOrderService implements OrderService {
-  async create(payload: CheckoutPayload): Promise<OrderResponse> {
+  async create(payload: CheckoutPayload, promoCode?: string | null, discountAmount?: number): Promise<OrderResponse> {
     await connect();
+
+    const discount = discountAmount ?? 0;
+    const finalTotal = Math.max(0, (payload.total ?? 0));
 
     const doc = await OrderModel.create({
       number: generateNumber(),
@@ -78,6 +82,9 @@ export class MongoOrderService implements OrderService {
       total: payload.total ?? 0,
       subtotal: payload.subtotal ?? 0,
       shipping: payload.shipping ?? 0,
+      promoCode: promoCode ?? null,
+      discountAmount: discount,
+      finalTotal: finalTotal > 0 ? finalTotal : null,
       customer: {
         firstName: payload.customer.firstName,
         lastName: payload.customer.lastName ?? '',
@@ -118,8 +125,6 @@ export class MongoOrderService implements OrderService {
     await connect();
     const filter: Record<string, unknown> = {};
     if (query?.status && query.status !== 'any') {
-      // The admin passes comma-separated statuses (WooCommerce convention) for the
-      // "Normal" tab; match any of them with $in instead of an exact string compare.
       const statuses = String(query.status).split(',').map((s) => s.trim()).filter(Boolean);
       filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
     }
@@ -152,6 +157,9 @@ export class MongoOrderService implements OrderService {
     if (patch.subtotal !== undefined) update.subtotal = patch.subtotal;
     if (patch.total !== undefined) update.total = patch.total;
     if (patch.attempts !== undefined) update.attempts = patch.attempts;
+    if (patch.promoCode !== undefined) update.promoCode = patch.promoCode;
+    if (patch.discountAmount !== undefined) update.discountAmount = patch.discountAmount;
+    if (patch.finalTotal !== undefined) update.finalTotal = patch.finalTotal;
     if (patch.delivery !== undefined) {
       for (const [k, v] of Object.entries(patch.delivery)) {
         update[`delivery.${k}`] = v;
