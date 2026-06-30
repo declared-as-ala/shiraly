@@ -62,6 +62,31 @@ function toDelivery(d?: Record<string, unknown>): OrderResponse['delivery'] {
   };
 }
 
+/**
+ * Build order-line attributes from a cart item's selected variation (size/color)
+ * + bundle info, in the shape the admin drawer's parseLine expects:
+ *  - simple line  → [{ key: 'Size', value: 'M' }, …]
+ *  - bundle slot  → [{ key: 'Offre', value: '…' }, { key: 'Item 1', value: 'Size: M · Couleur: noir' }]
+ */
+function lineAttributes(i: {
+  variation?: Record<string, string>;
+  bundleSlot?: number;
+  bundleName?: string;
+}): { key: string; value: string }[] | undefined {
+  const variation = i.variation ?? {};
+  const entries = Object.entries(variation).filter(([, v]) => v);
+  const attrs: { key: string; value: string }[] = [];
+
+  if (i.bundleSlot) {
+    if (i.bundleName) attrs.push({ key: 'Offre', value: String(i.bundleName) });
+    attrs.push({ key: `Item ${i.bundleSlot}`, value: entries.map(([k, v]) => `${k}: ${v}`).join(' · ') || '—' });
+  } else {
+    for (const [k, v] of entries) attrs.push({ key: String(k), value: String(v) });
+    if (i.bundleName) attrs.push({ key: 'Offre', value: String(i.bundleName) });
+  }
+  return attrs.length ? attrs : undefined;
+}
+
 let orderCounter = Date.now();
 
 function generateNumber(): string {
@@ -102,7 +127,7 @@ export class MongoOrderService implements OrderService {
         price: i.price,
         total: i.price * i.qty,
         imageUrl: i.image,
-        attributes: i.bundleSlot ? [{ key: 'Bundle', value: String(i.bundleSlot) }] : undefined,
+        attributes: lineAttributes(i),
       })),
       deliveryCompany: payload.deliveryCompany ?? '',
       paymentMethod: payload.paymentMethod ?? 'cod',

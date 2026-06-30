@@ -4,7 +4,7 @@ import connect from '@/lib/mongodb';
 import PromoCodeModel from '@/lib/models/PromoCode';
 import ProductModel from '@/lib/models/Product';
 import OrderModel from '@/lib/models/Order';
-import { validatePromoCode, calculateDiscountAmount } from '@/lib/promo-calculator';
+import { validatePromoCode } from '@/lib/promo-calculator';
 
 function toData(doc: Record<string, unknown>): PromoCodeData {
   return {
