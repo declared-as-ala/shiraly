@@ -266,9 +266,9 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         .catch(() => alert('Erreur de chargement de la commande'))
         .finally(() => setLoading(false));
     } else {
-      // reset on open-for-create — leave status blank so we DON'T send it,
-      // letting WooCommerce apply the site's default (works on custom-status plugins).
-      setStatus('');
+      // reset on open-for-create — default to "en-attente" so the new order
+      // lands in the Normal tab (which filters on the French statuses).
+      setStatus('en-attente');
       setOriginalStatus('');
       setAttempts(1);
       setAssignmentHistory([]);
@@ -413,7 +413,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         privateNote,
         paymentMethod: 'cod' as const,
       };
-      if (statusChanged) payload.status = status;
+      // On create, always send a status (default en-attente) so the order is
+      // queryable in the admin Normal tab; on edit, only send when it changed.
+      if (!isEdit) payload.status = status || 'en-attente';
+      else if (statusChanged) payload.status = status;
       payload.attempts = attempts;
       const url = isEdit ? `${apiBase}/orders/${orderId}` : '/api/admin/orders';
       const method = isEdit ? 'PUT' : 'POST';

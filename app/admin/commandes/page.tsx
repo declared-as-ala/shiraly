@@ -59,7 +59,7 @@ export default async function Commandes(props: {
   }
 
   // Active WooCommerce statuses for each tab
-  const NORMAL_STATUSES = 'en-attente,confirme,annule,tentative';
+  const NORMAL_STATUSES = 'en-attente,confirme,annule,tentative,pending';
   const ABANDONED_STATUSES = 'checkout-draft';
 
   // Determine which status to query based on current tab and active status filter
@@ -93,7 +93,7 @@ export default async function Commandes(props: {
   );
 
   // 2. Fetch counts for each individual status dynamically in parallel to get exact counts
-  const statusesToCount = ['en-attente', 'confirme', 'tentative', 'annule', 'checkout-draft', 'trash'];
+  const statusesToCount = ['en-attente', 'confirme', 'tentative', 'annule', 'pending', 'checkout-draft', 'trash'];
   for (const s of statusesToCount) {
     promises.push(
       orderService.list({
@@ -123,10 +123,11 @@ export default async function Commandes(props: {
 
   // Derive tab counts from the status counts map
   const tabCounts = {
-    normal: (statusCountsMap['en-attente'] ?? 0) + 
-            (statusCountsMap['confirme'] ?? 0) + 
-            (statusCountsMap['tentative'] ?? 0) + 
-            (statusCountsMap['annule'] ?? 0),
+    normal: (statusCountsMap['en-attente'] ?? 0) +
+            (statusCountsMap['confirme'] ?? 0) +
+            (statusCountsMap['tentative'] ?? 0) +
+            (statusCountsMap['annule'] ?? 0) +
+            (statusCountsMap['pending'] ?? 0),
     abandoned: statusCountsMap['checkout-draft'] ?? 0,
     trash: statusCountsMap['trash'] ?? 0,
   };
