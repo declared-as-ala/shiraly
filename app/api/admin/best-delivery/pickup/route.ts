@@ -19,8 +19,17 @@ export async function POST(req: Request) {
     const order = await orderService.getById(orderId);
     if (!order) return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 });
 
+    // Include the chosen size/color (line attributes) so they appear on the
+    // Best Delivery bordereau, e.g. "KAMRAYA PANTS (Size: M) x2".
     const designation =
-      order.items.map((i) => `${i.name}${i.quantity > 1 ? ` x${i.quantity}` : ''}`).join(', ').slice(0, 250)
+      order.items.map((i) => {
+        const opts = (i.attributes ?? [])
+          .filter((a) => a.value && a.value !== '—')
+          .map((a) => (/^offre$/i.test(a.key) || /^item\s*\d+/i.test(a.key) ? a.value : `${a.key}: ${a.value}`))
+          .join(' · ');
+        const qty = i.quantity > 1 ? ` x${i.quantity}` : '';
+        return `${i.name}${opts ? ` (${opts})` : ''}${qty}`;
+      }).join(', ').slice(0, 250)
       || `Commande ${order.number}`;
 
     const input: CreatePickupInput = {
