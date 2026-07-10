@@ -138,7 +138,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
         manageStock: form.manageStock,
         stockQuantity: form.manageStock ? form.stockQuantity : null,
         categoryIds: form.categoryIds,
-        imageIds: form.images.map((i) => i.id),
+        imageIds: form.images.map((i) => i.url),
         upsellIds: form.upsellIds,
         bundles: form.bundles,
         hoverImage: form.hoverImage,
@@ -170,7 +170,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       regularPrice: original.regularPrice,
       salePrice: original.salePrice ?? null,
       categoryIds: original.categoryIds,
-      imageIds: original.images.map((i) => i.id),
+      imageIds: original.images.map((i) => i.url),
       bundles: original.bundles,
     };
     const create = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
