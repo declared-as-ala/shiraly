@@ -31,8 +31,11 @@ export type OrderUpdate = {
   meta?: Record<string, unknown>;
   items?: {
     productId: string;
+    name?: string;
     qty: number;
     unitPrice?: number;
+    price?: number;
+    image?: string;
     variation?: Record<string, string>;
     bundleName?: string;
     bundleSlot?: number;

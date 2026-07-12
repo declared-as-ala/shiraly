@@ -440,13 +440,13 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       onClose={onClose}
       title={isEdit ? `Modifier la commande` : 'Créer une commande'}
       actions={
-        <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:opacity-50">
+        <button onClick={save} disabled={saving || loading} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50">
           <Save size={14} /> {saving ? 'Enregistrement…' : 'Enregistrer'}
         </button>
       }
     >
       {loading ? (
-        <p className="p-10 text-center text-ink-700">Chargement…</p>
+        <OrderDrawerSkeleton />
       ) : (
         <div className="space-y-5">
           {/* Détails de la commande */}
@@ -832,6 +832,55 @@ function renderSummaryRows(args: {
 }
 
 /** One <select> per known product attribute, free-form fallback when no options were configured. */
+function OrderDrawerSkeleton() {
+  return (
+    <div className="space-y-5" role="status" aria-live="polite" aria-label="Chargement de la commande">
+      <div className="flex items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50 px-5 py-4 text-brand-700">
+        <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-black">Chargement de la commande</p>
+          <p className="text-xs font-medium opacity-75">Préparation des informations et des produits…</p>
+        </div>
+      </div>
+
+      {[2, 4].map((fieldCount, cardIndex) => (
+        <section key={cardIndex} className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+          <div className="border-b border-ink-200 px-5 py-4">
+            <div className="h-3 w-36 animate-pulse rounded-full bg-ink-200" />
+          </div>
+          <div className="grid gap-4 p-5 md:grid-cols-2">
+            {Array.from({ length: fieldCount }, (_, fieldIndex) => (
+              <div key={fieldIndex} className="space-y-2">
+                <div className="h-2.5 w-20 animate-pulse rounded-full bg-ink-200" />
+                <div className="h-12 animate-pulse rounded-xl bg-ink-100" />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <section className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+        <div className="border-b border-ink-200 px-5 py-4">
+          <div className="h-3 w-44 animate-pulse rounded-full bg-ink-200" />
+        </div>
+        <div className="space-y-3 p-5">
+          {[0, 1].map((row) => (
+            <div key={row} className="flex items-center gap-3">
+              <div className="h-12 w-12 shrink-0 animate-pulse rounded-xl bg-ink-200" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-2/3 animate-pulse rounded-full bg-ink-200" />
+                <div className="h-2.5 w-1/3 animate-pulse rounded-full bg-ink-100" />
+              </div>
+              <div className="h-3 w-16 animate-pulse rounded-full bg-ink-200" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <span className="sr-only">Chargement…</span>
+    </div>
+  );
+}
+
 function VariationSelects({
   attrs, value, onChange,
 }: {

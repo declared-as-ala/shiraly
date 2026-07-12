@@ -185,6 +185,21 @@ export class MongoOrderService implements OrderService {
     if (patch.promoCode !== undefined) update.promoCode = patch.promoCode;
     if (patch.discountAmount !== undefined) update.discountAmount = patch.discountAmount;
     if (patch.finalTotal !== undefined) update.finalTotal = patch.finalTotal;
+    if (patch.items !== undefined) {
+      update.items = patch.items.map((item) => {
+        const quantity = Number(item.qty) || 0;
+        const price = Number(item.unitPrice ?? item.price) || 0;
+        return {
+          productId: item.productId,
+          name: item.name ?? '',
+          quantity,
+          price,
+          total: price * quantity,
+          imageUrl: item.image || undefined,
+          attributes: lineAttributes(item),
+        };
+      });
+    }
     if (patch.delivery !== undefined) {
       for (const [k, v] of Object.entries(patch.delivery)) {
         update[`delivery.${k}`] = v;

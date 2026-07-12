@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, Edit, Trash2, Plus, Search, X, RotateCcw } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
@@ -80,6 +80,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   // Filters
   const [activeTab, setActiveTab] = useState<'normal' | 'abandoned' | 'trash'>(tabParam);
   const [query, setQuery] = useState(qParam);
+  const lastPushedQuery = useRef<string | null>(null);
   const [statusFilter, setStatusFilter] = useState(statusParam);
   const [productFilter, setProductFilter] = useState('');
   const [datePreset, setDatePreset] = useState(datePresetParam);
@@ -89,7 +90,15 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
 
   // Sync state with URL params
   useEffect(() => { setActiveTab(tabParam); }, [tabParam]);
-  useEffect(() => { setQuery(qParam); }, [qParam]);
+  useEffect(() => {
+    // A router update can finish after the user has already typed another
+    // digit. Do not let that older URL value overwrite the live input.
+    if (qParam === lastPushedQuery.current) {
+      lastPushedQuery.current = null;
+      return;
+    }
+    setQuery(qParam);
+  }, [qParam]);
   useEffect(() => { setStatusFilter(statusParam); }, [statusParam]);
   useEffect(() => { setDatePreset(datePresetParam); }, [datePresetParam]);
   useEffect(() => { setStartDate(startDateParam); }, [startDateParam]);
@@ -115,6 +124,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     const timer = setTimeout(() => {
       const currentQ = searchParams.get('q') || '';
       if (query !== currentQ) {
+        lastPushedQuery.current = query;
         updateFilters({ q: query || null });
       }
     }, 450);
