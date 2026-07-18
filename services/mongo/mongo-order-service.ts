@@ -2,6 +2,7 @@ import type { CheckoutPayload, OrderResponse, OrderStatus } from '@/types';
 import type { OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
 import connect from '@/lib/mongodb';
 import OrderModel from '@/lib/models/Order';
+import ProductModel from '@/lib/models/Product';
 
 function toOrder(doc: Record<string, unknown>): OrderResponse {
   const d = doc as Record<string, unknown>;
@@ -186,16 +187,27 @@ export class MongoOrderService implements OrderService {
     if (patch.discountAmount !== undefined) update.discountAmount = patch.discountAmount;
     if (patch.finalTotal !== undefined) update.finalTotal = patch.finalTotal;
     if (patch.items !== undefined) {
+      // The storefront finalize/draft-save sends items without name/image; never
+      // blank them out — reuse the existing order item, then fall back to the product.
+      const existing = await OrderModel.findById(id).lean();
+      const existingItems = (existing?.items as Array<Record<string, unknown>>) ?? [];
+      const missingIds = [...new Set(patch.items.filter((it) => !it.name || !it.image).map((it) => String(it.productId)))];
+      const prods = missingIds.length ? await ProductModel.find({ _id: { $in: missingIds } }).lean() : [];
+      const prodMap = new Map(prods.map((p) => [String(p._id), p as Record<string, unknown>]));
+
       update.items = patch.items.map((item) => {
         const quantity = Number(item.qty) || 0;
         const price = Number(item.unitPrice ?? item.price) || 0;
+        const prev = existingItems.find((e) => String(e.productId) === String(item.productId));
+        const prod = prodMap.get(String(item.productId));
+        const prodImg = ((prod?.images as Array<{ url?: string }> | undefined) ?? [])[0]?.url;
         return {
           productId: item.productId,
-          name: item.name ?? '',
+          name: item.name || (prev?.name as string) || (prod?.name as string) || '',
           quantity,
           price,
           total: price * quantity,
-          imageUrl: item.image || undefined,
+          imageUrl: item.image || (prev?.imageUrl as string) || prodImg || undefined,
           attributes: lineAttributes(item),
         };
       });
