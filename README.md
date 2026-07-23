@@ -37,8 +37,12 @@ Admin: <http://localhost:3000/admin>
 
 | Variable | Description |
 | --- | --- |
-| `NAVEX_*` | Navex.tn integration |
-| `FIRST_DELIVERY_*` | First Delivery Group integration |
+| `NAVEX_TOKEN_ADD` | Create Navex parcels (server-only) |
+| `NAVEX_TOKEN_GET` | Track one Navex parcel (server-only) |
+| `NAVEX_TOKEN_GET_MULTIPLE` | Track several Navex parcels (server-only) |
+| `NAVEX_TOKEN_DELETE` | Cancel a Navex parcel (server-only) |
+| `NAVEX_TOKEN_PENDING` | Retrieve pending Navex parcels (server-only) |
+| `BEST_DELIVERY_*` | Best Delivery integration |
 
 ## Pages
 

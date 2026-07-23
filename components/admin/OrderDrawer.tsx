@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import NumberField from './NumberField';
 import BestDeliveryPanel from './BestDeliveryPanel';
+import NavexPanel from './NavexPanel';
 import { Save, Trash2, Plus, History } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import type { OrderResponse, OrderStatus } from '@/types';
@@ -245,7 +246,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             }];
           }
           setAssignmentHistory(history);
-          setDeliveryCompany(String((o.meta?._mzem_delivery_company as string) ?? ''));
+          setDeliveryCompany(String(o.deliveryCompany ?? o.delivery?.provider ?? o.meta?._mzem_delivery_company ?? ''));
           setExchange(o.meta?._mzem_exchange === 'yes');
           setShipping(o.shipping ?? 8);
           setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
@@ -468,6 +469,14 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 </select>
               </Field>
 
+              <Field label="Société de livraison">
+                <select className="input" value={deliveryCompany} onChange={(e) => setDeliveryCompany(e.target.value)}>
+                  <option value="">— Sélectionner —</option>
+                  <option value="navex">Navex</option>
+                  <option value="best_delivery">Best Delivery</option>
+                </select>
+              </Field>
+
               {status === 'tentative' && (
                 <Field label="Attempt">
                   <div className="flex items-center gap-1 mt-1">
@@ -624,8 +633,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             </div>
           </Card>
 
-          {isEdit && orderId && apiBase === '/api/admin' && (
+          {isEdit && orderId && apiBase === '/api/admin' && deliveryCompany === 'best_delivery' && (
             <BestDeliveryPanel orderId={orderId} />
+          )}
+          {isEdit && orderId && apiBase === '/api/admin' && deliveryCompany === 'navex' && (
+            <NavexPanel orderId={orderId} />
           )}
         </div>
       )}

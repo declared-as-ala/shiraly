@@ -39,6 +39,7 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
       attributes: i.attributes as Array<{ key: string; value: string }> | undefined,
     })),
     shipping: d.shipping as number,
+    deliveryCompany: (d.deliveryCompany as string | undefined) ?? '',
     assignedEmployeeId: d.assignedEmployeeId as string | null | undefined,
     assignedAt: d.assignedAt as string | null | undefined,
     delivery: toDelivery(d.delivery as Record<string, unknown> | undefined),

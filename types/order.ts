@@ -70,6 +70,7 @@ export type OrderResponse = {
   customer: CheckoutCustomer;
   items: OrderLineItem[];
   shipping: number;
+  deliveryCompany?: string;
   assignedEmployeeId?: string | null;
   assignedAt?: string | null;
   delivery?: OrderDelivery;
