@@ -44,3 +44,15 @@ export const SITE = {
 export function formatPrice(v: number): string {
   return `${Math.round(v)} ${SITE.currency.symbol}`;
 }
+
+export function normalizeImageUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+    return trimmed;
+  }
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dhugyagpb';
+  return `https://res.cloudinary.com/${cloudName}/image/upload/${trimmed}`;
+}
+

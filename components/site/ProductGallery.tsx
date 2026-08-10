@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { normalizeImageUrl } from '@/lib/site-config';
 
 interface ImageItem {
   id: string | number;
@@ -43,7 +44,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
         <div style={{ paddingBottom: '100%' }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={activeImage.url}
+          src={normalizeImageUrl(activeImage.url)}
           alt={activeImage.alt || productName}
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
           loading="eager"
@@ -80,7 +81,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={img.url}
+                  src={normalizeImageUrl(img.url)}
                   alt={img.alt || productName}
                   className="absolute inset-0 h-full w-full object-cover"
                   loading="lazy"
@@ -124,7 +125,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
-              src={activeImage.url}
+              src={normalizeImageUrl(activeImage.url)}
               alt={activeImage.alt || productName}
               className="max-h-[85vh] max-w-[90vw] object-contain transition-transform duration-300"
             />

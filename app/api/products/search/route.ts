@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connect from '@/lib/mongodb';
 import ProductModel from '@/lib/models/Product';
+import { normalizeImageUrl } from '@/lib/site-config';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -17,14 +18,17 @@ export async function GET(req: Request) {
     .limit(10)
     .lean();
 
-  const results = docs.map((d: Record<string, unknown>) => ({
-    id: String(d._id),
-    name: d.name as string,
-    slug: d.slug as string,
-    price: (d.salePrice ?? d.regularPrice) as number,
-    regularPrice: d.regularPrice as number,
-    image: ((d.images as Array<{ url: string }>)?.[0]?.url) ?? null,
-  }));
+  const results = docs.map((d: Record<string, unknown>) => {
+    const rawImg = ((d.images as Array<{ url: string }>)?.[0]?.url) ?? null;
+    return {
+      id: String(d._id),
+      name: d.name as string,
+      slug: d.slug as string,
+      price: (d.salePrice ?? d.regularPrice) as number,
+      regularPrice: d.regularPrice as number,
+      image: rawImg ? normalizeImageUrl(rawImg) : null,
+    };
+  });
 
   return NextResponse.json(results);
 }

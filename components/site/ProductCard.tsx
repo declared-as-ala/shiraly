@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import type { Product } from '@/types';
-import { formatPrice } from '@/lib/site-config';
+import { formatPrice, normalizeImageUrl } from '@/lib/site-config';
 import type { Lang } from '@/lib/i18n';
 import QuickAdd from '@/components/site/QuickAdd';
 import WishlistButton from '@/components/site/WishlistButton';
 
 export default function ProductCard({ product, lang = 'fr' }: { product: Product; lang?: Lang }) {
-  const img = product.images[0]?.url;
-  const hoverImg = product.hoverImage;
+  const img = normalizeImageUrl(product.images[0]?.url);
+  const hoverImg = normalizeImageUrl(product.hoverImage);
   const discount = product.onSale && product.regularPrice > product.price
     ? Math.round(((product.regularPrice - product.price) / product.regularPrice) * 100)
     : 0;

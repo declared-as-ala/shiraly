@@ -2,6 +2,7 @@ import type { Product, ProductListQuery, ProductListResult } from '@/types';
 import type { ProductInput, ProductService } from '../product-service';
 import connect from '@/lib/mongodb';
 import ProductModel from '@/lib/models/Product';
+import { normalizeImageUrl } from '@/lib/site-config';
 
 function toProduct(doc: Record<string, unknown>): Product {
   const d = doc as Record<string, unknown>;
@@ -12,6 +13,14 @@ function toProduct(doc: Record<string, unknown>): Product {
   const salePrice = rawSale === null || rawSale === undefined ? null : Number(rawSale);
   const onSale = salePrice != null && salePrice < regularPrice;
   const price = onSale ? (salePrice as number) : regularPrice;
+  const rawHover = d.hoverImage as string | null;
+  const hoverImage = rawHover ? normalizeImageUrl(rawHover) : null;
+  const rawBundles = (d.bundles as Product['bundles']) ?? [];
+  const bundles = rawBundles.map((b) => ({
+    ...b,
+    imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl,
+  }));
+
   return {
     id: String(d._id),
     slug: d.slug as string,
@@ -26,16 +35,19 @@ function toProduct(doc: Record<string, unknown>): Product {
     currency: (d.currency as string) ?? 'TND',
     inStock: (d.inStock as boolean) ?? true,
     stockQuantity: (d.stockQuantity as number | null) ?? null,
-    images: images.map((img) => ({
-      id: img.url,
-      url: img.url,
-      alt: img.alt ?? '',
-    })),
-    hoverImage: (d.hoverImage as string | null) ?? null,
+    images: images.map((img) => {
+      const norm = normalizeImageUrl(img.url);
+      return {
+        id: norm,
+        url: norm,
+        alt: img.alt ?? '',
+      };
+    }),
+    hoverImage,
     categoryIds: (d.categoryIds as string[]) ?? [],
     categorySlugs: (d.categorySlugs as string[]) ?? [],
     attributes: (d.attributes as Product['attributes']) ?? [],
-    bundles: (d.bundles as Product['bundles']) ?? [],
+    bundles,
     upsellIds: (d.upsellIds as string[]) ?? [],
     crossSellIds: (d.crossSellIds as string[]) ?? [],
     metaTitle: (d.metaTitle as string | null) ?? null,
@@ -48,7 +60,10 @@ function toProduct(doc: Record<string, unknown>): Product {
 /** imageIds carry image URLs in this backend (toProduct sets image.id = url). */
 function imagesFromIds(imageIds?: string[], alt?: string | null) {
   if (!imageIds) return undefined;
-  return imageIds.map((url, i) => ({ url, alt: i === 0 && alt ? alt : undefined }));
+  return imageIds
+    .map((rawUrl) => normalizeImageUrl(rawUrl))
+    .filter(Boolean)
+    .map((url, i) => ({ url, alt: i === 0 && alt ? alt : undefined }));
 }
 
 export class MongoProductService implements ProductService {
@@ -114,8 +129,8 @@ export class MongoProductService implements ProductService {
       inStock: input.stockQuantity == null ? true : input.stockQuantity > 0,
       categoryIds: input.categoryIds ?? [],
       images: imagesFromIds(input.imageIds, input.imageAlt) ?? [],
-      hoverImage: input.hoverImage ?? null,
-      bundles: input.bundles ?? [],
+      hoverImage: input.hoverImage ? normalizeImageUrl(input.hoverImage) : null,
+      bundles: input.bundles?.map((b) => ({ ...b, imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl })) ?? [],
       upsellIds: input.upsellIds ?? [],
       attributes: input.options?.map((o) => ({ name: o.label, options: o.values?.split(',').map((s: string) => s.trim()) ?? [], variation: o.type !== 'text' })) ?? [],
       metaTitle: input.metaTitle ?? null,
@@ -136,12 +151,14 @@ export class MongoProductService implements ProductService {
     if (input.salePrice !== undefined) update.salePrice = input.salePrice;
     if (input.status !== undefined) update.status = input.status;
     if (input.categoryIds !== undefined) update.categoryIds = input.categoryIds;
-    if (input.bundles !== undefined) update.bundles = input.bundles;
+    if (input.bundles !== undefined) {
+      update.bundles = input.bundles.map((b) => ({ ...b, imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl }));
+    }
     if (input.upsellIds !== undefined) update.upsellIds = input.upsellIds;
     if (input.options !== undefined) {
       update.attributes = input.options.map((o) => ({ name: o.label, options: o.values?.split(',').map((s: string) => s.trim()) ?? [], variation: o.type !== 'text' }));
     }
-    if (input.hoverImage !== undefined) update.hoverImage = input.hoverImage;
+    if (input.hoverImage !== undefined) update.hoverImage = input.hoverImage ? normalizeImageUrl(input.hoverImage) : null;
     if (input.imageIds !== undefined) update.images = imagesFromIds(input.imageIds, input.imageAlt) ?? [];
     if (input.stockQuantity !== undefined) {
       update.stockQuantity = input.stockQuantity;
