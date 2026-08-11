@@ -37,6 +37,8 @@ export async function POST(req: Request) {
       const result = await cloudinary.uploader.upload(dataUri, {
         folder: 'shiraly',
         resource_type: 'image',
+        type: 'upload',          // ensure public (not 'authenticated' or 'private')
+        access_mode: 'public',   // belt-and-suspenders: force public delivery
       });
       return NextResponse.json({ id: result.public_id, url: result.secure_url });
     } catch {
