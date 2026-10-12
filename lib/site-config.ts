@@ -49,7 +49,12 @@ export function normalizeImageUrl(url: string | null | undefined): string {
   if (!url) return '';
   const trimmed = url.trim();
   if (!trimmed) return '';
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('data:')
+  ) {
     return trimmed;
   }
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dhugyagpb';

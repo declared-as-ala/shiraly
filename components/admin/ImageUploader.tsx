@@ -14,12 +14,67 @@ type Props = {
   accept?: string;
 };
 
+/** Compress and resize image client-side to ensure lightweight Base64 in MongoDB */
+async function compressImageFile(file: File, maxDim = 1200, quality = 0.82): Promise<File> {
+  if (typeof window === 'undefined' || !file.type.startsWith('image/') || file.type.includes('svg') || file.type.includes('gif')) {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob && (blob.size < file.size || file.size > 200 * 1024)) {
+            const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), {
+              type: 'image/webp',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          } else {
+            resolve(file);
+          }
+        },
+        'image/webp',
+        quality
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+
 export default function ImageUploader({ onUploaded, multiple = false, children, className = '', accept = 'image/*' }: Props) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function uploadOne(file: File): Promise<UploadedImage | null> {
+  async function uploadOne(rawFile: File): Promise<UploadedImage | null> {
+    const file = await compressImageFile(rawFile);
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/admin/upload', { method: 'POST', body: fd });
