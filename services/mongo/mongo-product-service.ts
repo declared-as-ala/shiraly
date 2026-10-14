@@ -1,8 +1,58 @@
+import fs from 'fs';
+import path from 'path';
 import type { Product, ProductListQuery, ProductListResult } from '@/types';
 import type { ProductInput, ProductService } from '../product-service';
+import mongoose from 'mongoose';
 import connect from '@/lib/mongodb';
 import ProductModel from '@/lib/models/Product';
 import { normalizeImageUrl } from '@/lib/site-config';
+
+const IMG_REF = /^\/api\/img\/([a-f0-9]{24})\/(i|h|b)\/(\d+)$/;
+
+/** Base64 images are served through /api/img so pages stay small and cacheable. */
+function imgRef(id: string, kind: 'i' | 'h' | 'b', idx: number, url: string): string {
+  return url.startsWith('data:') ? `/api/img/${id}/${kind}/${idx}` : url;
+}
+
+const IMG_CACHE_DIR = path.join(process.cwd(), '.imgcache');
+const imgMem = new Map<string, string>();
+const imgKey = (id: string, kind: string, idx: number) => `${id}-${kind}-${idx}`;
+
+function invalidateImgCache(id: string) {
+  for (const k of Array.from(imgMem.keys())) if (k.startsWith(id + '-')) imgMem.delete(k);
+  try { for (const f of fs.readdirSync(IMG_CACHE_DIR)) if (f.startsWith(id + '-')) fs.unlinkSync(path.join(IMG_CACHE_DIR, f)); } catch { /* no cache dir yet */ }
+}
+
+/** Returns the stored data URL / URL behind an /api/img reference (cached: MongoDB is slow for big docs). */
+export async function getProductImageSource(id: string, kind: string, idx: number): Promise<string | null> {
+  const key = imgKey(id, kind, idx);
+  const hit = imgMem.get(key);
+  if (hit) return hit;
+  const file = path.join(IMG_CACHE_DIR, key);
+  try { const v = fs.readFileSync(file, 'utf8'); imgMem.set(key, v); return v; } catch { /* miss */ }
+
+  await connect();
+  const field = kind === 'i' ? { $arrayElemAt: ['$images.url', idx] }
+    : kind === 'h' ? '$hoverImage'
+    : { $arrayElemAt: ['$bundles.imageUrl', idx] };
+  const [row] = await ProductModel.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(id) } },
+    { $project: { _id: 0, src: field } },
+  ]);
+  const src = (row?.src as string | undefined) ?? null;
+  if (src) {
+    imgMem.set(key, src);
+    try { fs.mkdirSync(IMG_CACHE_DIR, { recursive: true }); fs.writeFileSync(file, src); } catch { /* read-only fs */ }
+  }
+  return src;
+}
+
+/** Turns /api/img references coming back from the admin UI into the stored image. */
+async function resolveImg(url: string | null | undefined): Promise<string> {
+  const m = url ? IMG_REF.exec(url) : null;
+  if (m) return (await getProductImageSource(m[1], m[2], Number(m[3]))) ?? '';
+  return normalizeImageUrl(url);
+}
 
 function toProduct(doc: Record<string, unknown>): Product {
   const d = doc as Record<string, unknown>;
@@ -14,11 +64,12 @@ function toProduct(doc: Record<string, unknown>): Product {
   const onSale = salePrice != null && salePrice < regularPrice;
   const price = onSale ? (salePrice as number) : regularPrice;
   const rawHover = d.hoverImage as string | null;
-  const hoverImage = rawHover ? normalizeImageUrl(rawHover) : null;
+  const pid = String(d._id);
+  const hoverImage = rawHover ? imgRef(pid, 'h', 0, normalizeImageUrl(rawHover)) : null;
   const rawBundles = (d.bundles as Product['bundles']) ?? [];
-  const bundles = rawBundles.map((b) => ({
+  const bundles = rawBundles.map((b, bi) => ({
     ...b,
-    imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl,
+    imageUrl: b.imageUrl ? imgRef(pid, 'b', bi, normalizeImageUrl(b.imageUrl)) : b.imageUrl,
   }));
 
   return {
@@ -35,8 +86,8 @@ function toProduct(doc: Record<string, unknown>): Product {
     currency: (d.currency as string) ?? 'TND',
     inStock: (d.inStock as boolean) ?? true,
     stockQuantity: (d.stockQuantity as number | null) ?? null,
-    images: images.map((img) => {
-      const norm = normalizeImageUrl(img.url);
+    images: images.map((img, ii) => {
+      const norm = imgRef(pid, 'i', ii, normalizeImageUrl(img.url));
       return {
         id: norm,
         url: norm,
@@ -58,13 +109,27 @@ function toProduct(doc: Record<string, unknown>): Product {
 }
 
 /** imageIds carry image URLs in this backend (toProduct sets image.id = url). */
-function imagesFromIds(imageIds?: string[], alt?: string | null) {
+async function imagesFromIds(imageIds?: string[], alt?: string | null) {
   if (!imageIds) return undefined;
-  return imageIds
-    .map((rawUrl) => normalizeImageUrl(rawUrl))
+  const urls = await Promise.all(imageIds.map((rawUrl) => resolveImg(rawUrl)));
+  return urls
     .filter(Boolean)
     .map((url, i) => ({ url, alt: i === 0 && alt ? alt : undefined }));
 }
+
+async function resolveBundles(bundles: NonNullable<ProductInput['bundles']>) {
+  return Promise.all(bundles.map(async (b) => ({ ...b, imageUrl: b.imageUrl ? await resolveImg(b.imageUrl) : b.imageUrl })));
+}
+
+const strip = (v: unknown) => ({ $cond: [{ $eq: [{ $substrBytes: [{ $ifNull: [v, ''] }, 0, 5] }, 'data:'] }, 'data:', v] });
+const STRIP_STAGE = { $addFields: {
+  images: { $map: { input: { $ifNull: ['$images', []] }, as: 'i', in: { $mergeObjects: ['$$i', { url: strip('$$i.url') }] } } },
+  hoverImage: strip('$hoverImage'),
+  bundles: { $map: { input: { $ifNull: ['$bundles', []] }, as: 'b', in: { $mergeObjects: ['$$b', { imageUrl: strip('$$b.imageUrl') }] } } },
+} };
+/** Fetch docs with Base64 payloads stripped server-side (toProduct maps the 'data:' marker to /api/img URLs). */
+const findStripped = (match: Record<string, unknown>, limit?: number) =>
+  ProductModel.aggregate([{ $match: match }, ...(limit ? [{ $limit: limit }] : []), STRIP_STAGE]);
 
 export class MongoProductService implements ProductService {
   async list(query: ProductListQuery = {}): Promise<ProductListResult> {
@@ -83,32 +148,38 @@ export class MongoProductService implements ProductService {
     else if (query.orderBy === 'title') sort.name = query.order === 'asc' ? 1 : -1;
     else if (query.orderBy === 'menu_order') sort.menuOrder = 1;
     else sort.createdAt = -1;
-    const docs = await ProductModel.find(filter).sort(sort).skip((page - 1) * perPage).limit(perPage).lean();
+    const docs = await ProductModel.aggregate([
+      { $match: filter },
+      { $sort: sort },
+      { $skip: (page - 1) * perPage },
+      { $limit: perPage },
+      STRIP_STAGE,
+    ]);
     return { items: docs.map(toProduct), total, totalPages: Math.ceil(total / perPage), page };
   }
 
   async getBySlug(slug: string): Promise<Product | null> {
     await connect();
-    const doc = await ProductModel.findOne({ slug }).lean();
+    const [doc] = await findStripped({ slug }, 1);
     return doc ? toProduct(doc) : null;
   }
 
   async getById(id: string): Promise<Product | null> {
     await connect();
-    const doc = await ProductModel.findById(id).lean();
+    const [doc] = await findStripped({ _id: new mongoose.Types.ObjectId(id) }, 1);
     return doc ? toProduct(doc) : null;
   }
 
   async getRelated(productId: string, limit = 4): Promise<Product[]> {
     await connect();
-    const product = await ProductModel.findById(productId).lean();
+    const product = await ProductModel.findById(productId).select('upsellIds categoryIds').lean();
     if (!product) return [];
     if (product.upsellIds?.length) {
-      const docs = await ProductModel.find({ _id: { $in: product.upsellIds } }).limit(limit).lean();
+      const docs = await findStripped({ _id: { $in: product.upsellIds.map((x: string) => new mongoose.Types.ObjectId(x)) } }, limit);
       return docs.map(toProduct);
     }
     if (product.categoryIds?.length) {
-      const docs = await ProductModel.find({ _id: { $ne: productId }, categoryIds: { $in: product.categoryIds } }).limit(limit).lean();
+      const docs = await findStripped({ _id: { $ne: new mongoose.Types.ObjectId(productId) }, categoryIds: { $in: product.categoryIds } }, limit);
       return docs.map(toProduct);
     }
     return [];
@@ -128,9 +199,9 @@ export class MongoProductService implements ProductService {
       stockQuantity: input.stockQuantity ?? null,
       inStock: input.stockQuantity == null ? true : input.stockQuantity > 0,
       categoryIds: input.categoryIds ?? [],
-      images: imagesFromIds(input.imageIds, input.imageAlt) ?? [],
-      hoverImage: input.hoverImage ? normalizeImageUrl(input.hoverImage) : null,
-      bundles: input.bundles?.map((b) => ({ ...b, imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl })) ?? [],
+      images: (await imagesFromIds(input.imageIds, input.imageAlt)) ?? [],
+      hoverImage: input.hoverImage ? await resolveImg(input.hoverImage) : null,
+      bundles: input.bundles ? await resolveBundles(input.bundles) : [],
       upsellIds: input.upsellIds ?? [],
       attributes: input.options?.map((o) => ({ name: o.label, options: o.values?.split(',').map((s: string) => s.trim()) ?? [], variation: o.type !== 'text' })) ?? [],
       metaTitle: input.metaTitle ?? null,
@@ -152,14 +223,14 @@ export class MongoProductService implements ProductService {
     if (input.status !== undefined) update.status = input.status;
     if (input.categoryIds !== undefined) update.categoryIds = input.categoryIds;
     if (input.bundles !== undefined) {
-      update.bundles = input.bundles.map((b) => ({ ...b, imageUrl: b.imageUrl ? normalizeImageUrl(b.imageUrl) : b.imageUrl }));
+      update.bundles = await resolveBundles(input.bundles);
     }
     if (input.upsellIds !== undefined) update.upsellIds = input.upsellIds;
     if (input.options !== undefined) {
       update.attributes = input.options.map((o) => ({ name: o.label, options: o.values?.split(',').map((s: string) => s.trim()) ?? [], variation: o.type !== 'text' }));
     }
-    if (input.hoverImage !== undefined) update.hoverImage = input.hoverImage ? normalizeImageUrl(input.hoverImage) : null;
-    if (input.imageIds !== undefined) update.images = imagesFromIds(input.imageIds, input.imageAlt) ?? [];
+    if (input.hoverImage !== undefined) update.hoverImage = input.hoverImage ? await resolveImg(input.hoverImage) : null;
+    if (input.imageIds !== undefined) update.images = (await imagesFromIds(input.imageIds, input.imageAlt)) ?? [];
     if (input.stockQuantity !== undefined) {
       update.stockQuantity = input.stockQuantity;
       update.inStock = input.stockQuantity == null ? true : input.stockQuantity > 0;
@@ -167,14 +238,17 @@ export class MongoProductService implements ProductService {
     if (input.metaTitle !== undefined) update.metaTitle = input.metaTitle;
     if (input.metaDescription !== undefined) update.metaDescription = input.metaDescription;
     if (input.focusKeyword !== undefined) update.focusKeyword = input.focusKeyword;
-    const doc = await ProductModel.findByIdAndUpdate(id, { $set: update }, { new: true }).lean();
+    const doc = await ProductModel.findByIdAndUpdate(id, { $set: update }, { new: true }).select('-images -bundles').lean();
     if (!doc) throw new Error('Product not found');
-    return toProduct(doc);
+    invalidateImgCache(id);
+    const [fresh] = await findStripped({ _id: new mongoose.Types.ObjectId(id) }, 1);
+    return toProduct(fresh ?? doc);
   }
 
   async remove(id: string): Promise<void> {
     await connect();
     await ProductModel.findByIdAndDelete(id);
+    invalidateImgCache(id);
   }
 
   async reorder(items: { id: string; menuOrder: number }[]): Promise<void> {
