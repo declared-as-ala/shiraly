@@ -7,12 +7,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
   const [orders, products, categories] = await Promise.all([
-    orderService.list({ perPage: 500 }).catch(() => ({ items: [], total: 0, totalPages: 0, page: 1 })),
+    orderService.summary(500).catch(() => []),
     productService.list({ perPage: 200 }).catch(() => ({ items: [], total: 0, totalPages: 0, page: 1 })),
     categoryService.list().catch(() => []),
   ]);
 
-  const orderList = orders.items;
+  const orderList = orders;
   const productList = products.items;
   const revenue = orderList.reduce((s, o) => s + o.total, 0);
   const completed = orderList.filter((o) => o.status === 'completed').length;
