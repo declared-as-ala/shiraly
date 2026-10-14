@@ -4,19 +4,16 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
-import { useCart, selectDiscount, selectSubtotal } from '@/lib/cart';
+import { useCart, selectSubtotal } from '@/lib/cart';
 import { SITE, formatPrice } from '@/lib/site-config';
 import type { CheckoutPayload } from '@/types';
 import { useLanguage } from '@/components/site/LanguageProvider';
-import PromoCodeInput from '@/components/site/PromoCodeInput';
 
 export default function CheckoutPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
-  const appliedPromo = useCart((s) => s.appliedPromo);
   const total = useMemo(() => items.reduce((s, x) => s + x.price * x.qty, 0), [items]);
-  const discount = useMemo(() => selectDiscount(appliedPromo), [appliedPromo]);
   const { t } = useLanguage();
 
   const [submitting, setSubmitting] = useState(false);
@@ -24,7 +21,6 @@ export default function CheckoutPage() {
     firstName: string;
     phone: string;
     phone2: string;
-    email: string;
     city: string;
     address: string;
     note: string;
@@ -32,14 +28,13 @@ export default function CheckoutPage() {
     firstName: '',
     phone: '',
     phone2: '',
-    email: '',
     city: '',
     address: '',
     note: '',
   });
 
   const shipping = 8;
-  const grand = Math.max(0, total + shipping - discount);
+  const grand = total + shipping;
 
   const draftOrderIdRef = useRef<string | undefined>(undefined);
   const isSubmittedRef = useRef<boolean>(false);
@@ -63,7 +58,6 @@ export default function CheckoutPage() {
           paymentMethod: 'cod',
           source: 'storefront-next',
           status: 'checkout-draft',
-          promoCode: appliedPromo?.code,
         };
 
         const res = await fetch('/api/orders', {
@@ -85,7 +79,7 @@ export default function CheckoutPage() {
     return () => {
       if (delayDebounceFn) clearTimeout(delayDebounceFn);
     };
-  }, [form, items, shipping, appliedPromo]);
+  }, [form, items, shipping]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,10 +101,6 @@ export default function CheckoutPage() {
         source: 'storefront-next',
         status: 'en-attente',
       };
-      if (appliedPromo) {
-        payload.promoCode = appliedPromo.code;
-        payload.discountAmount = discount;
-      }
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,15 +158,6 @@ export default function CheckoutPage() {
                 />
               </label>
               <label className="block text-sm font-bold text-ink-700">
-                {t.checkout.email}
-                <input
-                  type="email"
-                  className="input mt-1 font-normal"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                />
-              </label>
-              <label className="block text-sm font-bold text-ink-700">
                 {t.checkout.city}
                 <select
                   className="input mt-1 font-normal"
@@ -207,9 +188,6 @@ export default function CheckoutPage() {
                 />
               </label>
             </div>
-            <div className="border-t border-ink-200 pt-4">
-              <PromoCodeInput />
-            </div>
           </div>
 
           <aside className="card h-fit p-6">
@@ -237,12 +215,6 @@ export default function CheckoutPage() {
             </ul>
             <div className="mt-4 space-y-2 border-t border-ink-200 pt-4 text-sm">
               <div className="flex justify-between"><span>{t.cart.subtotal}</span><span>{formatPrice(total)}</span></div>
-              {discount > 0 && (
-                <div className="flex justify-between text-emerald-600">
-                  <span>{t.cart.promoDiscount}</span>
-                  <span>-{formatPrice(discount)}</span>
-                </div>
-              )}
               <div className="flex justify-between"><span>{t.cart.shipping}</span><span>{formatPrice(shipping)}</span></div>
               <div className="mt-2 flex justify-between border-t border-ink-200 pt-2 text-lg font-black">
                 <span>{t.cart.total}</span>
