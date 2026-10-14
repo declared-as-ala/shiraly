@@ -4,19 +4,16 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
-import { useCart, selectSubtotal, selectDiscount, selectTotal } from '@/lib/cart';
+import { useCart, selectSubtotal, selectTotal } from '@/lib/cart';
 import { formatPrice } from '@/lib/site-config';
 import { Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { useLanguage } from '@/components/site/LanguageProvider';
-import PromoCodeInput from '@/components/site/PromoCodeInput';
 
 export default function PanierPage() {
   const items = useCart((s) => s.items);
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
-  const appliedPromo = useCart((s) => s.appliedPromo);
   const total = useMemo(() => items.reduce((s, x) => s + x.price * x.qty, 0), [items]);
-  const discount = useMemo(() => selectDiscount(appliedPromo), [appliedPromo]);
   const { t } = useLanguage();
 
   return (
@@ -61,24 +58,15 @@ export default function PanierPage() {
                   );
                 })}
               </div>
-              <div className="card p-6">
-                <PromoCodeInput />
-              </div>
             </div>
             <aside className="card h-fit p-6">
               <h2 className="mb-4 text-lg font-bold">{t.cart.summary}</h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span>{t.cart.subtotal}</span><span>{formatPrice(total)}</span></div>
-                {discount > 0 && (
-                  <div className="flex justify-between text-emerald-600">
-                    <span>{t.cart.promoDiscount}</span>
-                    <span>-{formatPrice(discount)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between"><span>{t.cart.shipping}</span><span className="text-ink-300">{t.cart.shippingNext}</span></div>
                 <div className="mt-2 flex justify-between border-t border-ink-200 pt-3 text-lg font-black">
                   <span>{t.cart.total}</span>
-                  <span className="text-brand-500">{formatPrice(Math.max(0, total - discount))}</span>
+                  <span className="text-brand-500">{formatPrice(total)}</span>
                 </div>
               </div>
               <Link href="/commande" className="btn-cta mt-6 w-full">{t.cart.checkout}</Link>
