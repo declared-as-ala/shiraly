@@ -17,6 +17,12 @@ export type OrderListResult = {
   page: number;
 };
 
+export type OrderSummary = {
+  status: OrderStatus;
+  total: number;
+  items: { name: string; quantity: number }[];
+};
+
 export type OrderUpdate = {
   status?: OrderStatus;
   customer?: Partial<CheckoutPayload['customer']>;
@@ -49,6 +55,8 @@ export interface OrderService {
   create(payload: CheckoutPayload, promoCode?: string | null, discountAmount?: number): Promise<OrderResponse>;
   getById(id: string): Promise<OrderResponse | null>;
   list(query?: OrderListQuery): Promise<OrderListResult>;
+  /** Lightweight latest-orders summary for the dashboard (no images / delivery payloads). */
+  summary(limit?: number): Promise<OrderSummary[]>;
   update(id: string, patch: OrderUpdate): Promise<OrderResponse>;
   remove(id: string): Promise<void>;
   /** Assign or reassign an order to an employee (pass null to unassign). */

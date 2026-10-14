@@ -1,8 +1,23 @@
 import type { CheckoutPayload, OrderResponse, OrderStatus } from '@/types';
-import type { OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
+import type { OrderService, OrderListQuery, OrderListResult, OrderUpdate, OrderSummary } from '../order-service';
+import mongoose from 'mongoose';
 import connect from '@/lib/mongodb';
 import OrderModel from '@/lib/models/Order';
 import ProductModel from '@/lib/models/Product';
+
+/** Order lines copy the product image as Base64 — serve it through the cached /api/img route instead. */
+function lineImage(url: unknown, productId: unknown): string | undefined {
+  if (typeof url !== 'string' || !url) return undefined;
+  if (!url.startsWith('data:')) return url;
+  return typeof productId === 'string' && /^[a-f0-9]{24}$/.test(productId) ? `/api/img/${productId}/i/0` : undefined;
+}
+
+/** Aggregation stage that drops Base64 line images in MongoDB so they never cross the (slow) wire. */
+const STRIP_LINE_IMAGES = { $addFields: {
+  items: { $map: { input: { $ifNull: ['$items', []] }, as: 'i', in: { $mergeObjects: ['$$i', {
+    imageUrl: { $cond: [{ $eq: [{ $substrBytes: [{ $ifNull: ['$$i.imageUrl', ''] }, 0, 5] }, 'data:'] }, 'data:', '$$i.imageUrl'] },
+  }] } } },
+} };
 
 function toOrder(doc: Record<string, unknown>): OrderResponse {
   const d = doc as Record<string, unknown>;
@@ -35,7 +50,7 @@ function toOrder(doc: Record<string, unknown>): OrderResponse {
       quantity: i.quantity as number,
       price: i.price as number,
       total: i.total as number,
-      imageUrl: i.imageUrl as string | undefined,
+      imageUrl: lineImage(i.imageUrl, i.productId),
       attributes: i.attributes as Array<{ key: string; value: string }> | undefined,
     })),
     shipping: d.shipping as number,
@@ -144,7 +159,7 @@ export class MongoOrderService implements OrderService {
 
   async getById(id: string): Promise<OrderResponse | null> {
     await connect();
-    const doc = await OrderModel.findById(id).lean();
+    const [doc] = await OrderModel.aggregate([{ $match: { _id: new mongoose.Types.ObjectId(id) } }, STRIP_LINE_IMAGES]);
     return doc ? toOrder(doc) : null;
   }
 
@@ -169,8 +184,33 @@ export class MongoOrderService implements OrderService {
     const page = query?.page ?? 1;
     const perPage = query?.perPage ?? 20;
     const total = await OrderModel.countDocuments(filter);
-    const docs = await OrderModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * perPage).limit(perPage).lean();
+    const docs = await OrderModel.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * perPage },
+      { $limit: perPage },
+      STRIP_LINE_IMAGES,
+    ]);
     return { items: docs.map(toOrder), total, totalPages: Math.ceil(total / perPage), page };
+  }
+
+  async summary(limit = 500): Promise<OrderSummary[]> {
+    await connect();
+    const docs = await OrderModel.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0, status: 1, total: 1, shipping: 1, 'items.name': 1, 'items.quantity': 1, 'items.total': 1 } },
+    ]);
+    return docs.map((d) => {
+      const items = (d.items as Array<Record<string, unknown>>) ?? [];
+      const itemsTotal = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
+      const stored = Number(d.total) || 0;
+      return {
+        status: (d.status as OrderStatus) ?? 'pending',
+        total: stored > 0 ? stored : itemsTotal + (Number(d.shipping) || 0),
+        items: items.map((i) => ({ name: String(i.name ?? ''), quantity: Number(i.quantity) || 0 })),
+      };
+    });
   }
 
   async update(id: string, patch: OrderUpdate): Promise<OrderResponse> {

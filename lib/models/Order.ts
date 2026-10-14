@@ -57,6 +57,9 @@ const OrderSchema = new Schema({
   meta: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
+OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ status: 1, createdAt: -1 });
+
 const OrderModel = models.Order || model('Order', OrderSchema);
 
 export default OrderModel;
